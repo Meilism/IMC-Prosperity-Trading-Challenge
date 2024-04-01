@@ -23,11 +23,26 @@ Trading decision may be:
 - Attempt to buy/sell if the fair market price is within the bid-ask spread
 The trading decision should also depend on the current position to make sure if the order is matched, it will not exceed the position limit.
 
-The historical data is a time series of the product's price and quantity for each trade and is stored as `traderData`.
-Each iteration the trader class `run` method is called, it will analyze the historical data and make trading decisions based on the current market quotes, then update the `traderData`.
+All user data is stored in `traderData` and needs to be serialized to `string` object before returning to the simulator.
+```python
+import jsonpickle
+traderData = jsonpickle.encode(traderData)
+```
+To use the `traderData` in the next iteration, deserialize the `string` object back to `traderData`.
+```python
+traderData = jsonpickle.decode(traderData)
+```
 
-### Model for calculating fair market price with historical data
+### Structure of `traderData`
+The `traderData` serves as a container for all the necessary data for the trading decision.
+It is a dictionary keyed by the product name, and the value is another dictionary-like object `ProductData` with the following properties:
+- `position`: the current position of the product
+- `position_limit`: the maximum position allowed for the product
+- `previous_fair_price`: the fair market price calculated from the previous iteration
+- other quantities that are necessary for the pricing model
 
+### Model for calculating fair market price
+The input should be 
 
 ### Code to load and preprocess log data returned from the simulator
-This is to prepare the data for analyzing market dynamics and developing 
+This is to prepare the data for analyzing market dynamics and developing effective trading strategies.
