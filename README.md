@@ -11,4 +11,4 @@ Install the required packages:
 ```bash
 conda install pandas numpy jsonpickle matplotlib ipykernel
 ```
-Note that `matplotlib` is for visualization, `ipykernel` is required to run the jupyter notebook in the conda environment, neither of them are not required for the trading simulation.
+Note that `matplotlib` is for visualization, `ipykernel` is required to run the jupyter notebook in the conda environment, neither of them is required for the trading simulation.
