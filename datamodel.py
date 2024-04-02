@@ -17,7 +17,9 @@ class Listing:
         self.symbol = symbol
         self.product = product
         self.denomination = denomination
-        
+
+    def __getitem__(self, key: str) -> str:
+        return getattr(self, key)        
                  
 class ConversionObservation:
 

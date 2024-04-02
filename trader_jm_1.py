@@ -1,9 +1,10 @@
 import json
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
-from typing import Any
+from typing import Any, List
 
 POSITION_LIMIT = {
-    ''
+	"AMETHYSTS": 20,
+	"STARFRUIT": 20,
 }
 
 class Logger:
@@ -39,7 +40,7 @@ class Logger:
     def compress_listings(self, listings: dict[Symbol, Listing]) -> list[list[Any]]:
         compressed = []
         for listing in listings.values():
-            compressed.append([listing.symbol, listing.product, listing.denomination])
+            compressed.append([listing["symbol"], listing["product"], listing["denomination"]])
 
         return compressed
 
@@ -92,11 +93,34 @@ logger = Logger()
 
 class Trader:
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
-        orders = {}
+        result = {}
         conversions = 0
         trader_data = ""
 
-        # TODO: Add logic
+        logger.print("traderData: " + state.traderData)
+        logger.print("Observations: " + str(state.observations))
+        
+        for product in state.order_depths:
+            order_depth: OrderDepth = state.order_depths[product]
+            orders: List[Order] = []
+            acceptable_price = 10000 if product == 'AMETHYSTS' else 5000;  
+            
+            logger.print("Acceptable price : " + str(acceptable_price))
+            logger.print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
+    
+            if len(order_depth.sell_orders) != 0:
+                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
+                if int(best_ask) < acceptable_price:
+                    logger.print("BUY", str(-best_ask_amount) + "x", best_ask)
+                    orders.append(Order(product, best_ask, -best_ask_amount))
+    
+            if len(order_depth.buy_orders) != 0:
+                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
+                if int(best_bid) > acceptable_price:                    
+                    logger.print("SELL", str(best_bid_amount) + "x", best_bid)
+                    orders.append(Order(product, best_bid, -best_bid_amount))
+            
+            result[product] = orders
 
-        logger.flush(state, orders, conversions, trader_data)
-        return orders, conversions, trader_data
+        logger.flush(state, result, conversions, trader_data)
+        return result, conversions, trader_data
