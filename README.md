@@ -13,18 +13,30 @@ conda install pandas numpy jsonpickle matplotlib ipykernel
 ```
 Note that `matplotlib` is for visualization, `ipykernel` is required to run the jupyter notebook in the conda environment, neither of them is required for the trading simulation.
 
-## Structure
+## Example
+An example [trader.py](trader.py) is provided in the repo.
+The file is an empty skeleton and does not have any trading strategy coded up.
 
-### Trading strategy
-For any given product, calculate its fair market price based on historical data, and make trading decisions based on the fair market price and the outstanding orders in the market.
+:warning: **People could make their own copy of the file as `trader_<name>.py` and implement their own trading strategy.**
 
-Trading decision may be:
-- Buy if the fair market price is higher than the best ask price
-- Sell if the fair market price is lower than the best bid price
-- Attempt to buy/sell if the fair market price is within the bid-ask spread
+## Use the online Visualizer
+The skeleton file contains the necessary modification to use the [IMC Prosperity 2 Visualizer](https://jmerle.github.io/imc-prosperity-2-visualizer/).
 
-The trading decision should also depend on the current position to make sure if the order is matched, it will not exceed the position limit.
-And to avoid position imbalance in the case of unwanted market movement, the trading decision should also consider the current position.
+To use the visualizer, follow the steps below:
+1. Modify the `trader_<name>.py` file to implement your own trading strategy.
+2. Upload the `trader_<name>.py` to the Prosperity server.
+3. After the server finishes the simulation, download the log file from the server and upload it to the visualizer.
+4. Check out the performance of your trading strategy there!
+
+## Notebooks for visualization and analysis
+The [analysis.ipynb](analysis.ipynb) notebook is provided to visualize the trading performance as well as market dynamics.
+
+The code loads the second and third part of the generated log file ("activity log" and "trade history") into pandas [DataFrame](https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.html) objects, which can be further analyzed for building predictive models.
+
+We could potentially build our own back-testing models to test the trading strategy before deploying it to the server with the extracted test data from the log file.
+
+## Use `traderData` to store data between iterations
+The algorithm needs some data to make trading decisions, which should be stored in the `traderData` object to make sure it is persistent between iterations.
 
 All user data is stored in `traderData` and needs to be serialized to `string` object before returning to the simulator.
 ```python
@@ -35,18 +47,3 @@ To use the `traderData` in the next iteration, deserialize the `string` object b
 ```python
 traderData = jsonpickle.decode(traderData)
 ```
-
-### Structure of `traderData`
-The `traderData` serves as a container for all the necessary data for the trading decision.
-It is a dictionary keyed by the product name, and the value is another dictionary-like object `ProductData` with the following properties:
-- `fairMarketPrice` - the fair market price calculated based on historical data
-- other quantities that are necessary for the pricing model
-
-### Model for calculating the fair market price
-The input should be 
-
-### Decision making based on the model outputs
-
-**Market Making Strategy**
-
-**Trend Following Strategy**
