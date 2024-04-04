@@ -39,13 +39,14 @@ traderData = jsonpickle.decode(traderData)
 ### Structure of `traderData`
 The `traderData` serves as a container for all the necessary data for the trading decision.
 It is a dictionary keyed by the product name, and the value is another dictionary-like object `ProductData` with the following properties:
-- `position`: the current position of the product
-- `position_limit`: the maximum position allowed for the product
-- `previous_fair_price`: the fair market price calculated from the previous iteration
+- `fairMarketPrice` - the fair market price calculated based on historical data
 - other quantities that are necessary for the pricing model
 
 ### Model for calculating the fair market price
 The input should be 
 
-### Code to load and preprocess log data returned from the simulator
-This is to prepare the data for analyzing market dynamics and developing effective trading strategies.
+### Decision making based on the model outputs
+
+**Market Making Strategy**
+
+**Trend Following Strategy**

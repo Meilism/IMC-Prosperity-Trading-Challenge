@@ -2,9 +2,15 @@ import json
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 from typing import Any, List
 
-POSITION_LIMIT = {
-	"AMETHYSTS": 20,
-	"STARFRUIT": 20,
+TRADER_DATA = {
+    'AMETHYSTS': {
+        'position_limit': 20,
+        'acceptable_price': 10000,
+    },
+    'STARFRUIT': {
+        'position_limit': 20,
+        'acceptable_price': 5000,
+    },
 }
 
 class Logger:
