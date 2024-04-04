@@ -128,5 +128,6 @@ class Trader:
             
             result[product] = orders
 
+
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data
