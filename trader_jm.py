@@ -5,11 +5,11 @@ from typing import Any, List
 TRADER_DATA = {
     'AMETHYSTS': {
         'position_limit': 20,
-        'acceptable_price': 10000,
+        'mid_price': 10000,
+        'spread': 2,
     },
     'STARFRUIT': {
         'position_limit': 20,
-        'acceptable_price': 5000,
     },
 }
 
@@ -107,8 +107,12 @@ class Trader:
         logger.print("Observations: " + str(state.observations))
         
         # Initialize traderData in the first iteration
-        if state.traderData == "":
-            state.traderData = jsonpickle.encode(TRADER_DATA)
+        prev_trader_data = jsonpickle.decode(state.traderData)
+        if prev_trader_data == "":
+            prev_trader_data = TRADER_DATA        
+
+        # Strategy for trading AMETHYSTS
+        
 
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data
