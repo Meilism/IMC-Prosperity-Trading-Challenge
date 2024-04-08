@@ -5,8 +5,8 @@ from typing import Any, List
 TRADER_DATA = {
     'AMETHYSTS': {
         'position_limit': 20,
-        'mid_price': 10000,
-        'spread': 2,
+        'buy_price': [(9998, 0.3), (9996, 0.3), (9995, 0.4)],
+        'sell_price': [(10002, 0.3), (1004, 0.3), (1005, 0.4)],
     },
     'STARFRUIT': {
         'position_limit': 20,
@@ -102,17 +102,39 @@ class Trader:
         result = {}
         conversions = 0
         trader_data = ""
-
-        logger.print("traderData: " + state.traderData)
-        logger.print("Observations: " + str(state.observations))
         
         # Initialize traderData in the first iteration
-        prev_trader_data = jsonpickle.decode(state.traderData)
-        if prev_trader_data == "":
-            prev_trader_data = TRADER_DATA        
+        if state.traderData == "":
+            trader_data_prev = TRADER_DATA
+        else:
+            trader_data_prev = jsonpickle.decode(state.traderData)
 
-        # Strategy for trading AMETHYSTS
-        
+        """
+        Strategy for trading AMETHYSTS
+        """
+
+        current_position = state.position.get("AMETHYSTS",0)
+        position_limit = trader_data_prev["AMETHYSTS"]["position_limit"]
+        orders = []
+
+        # Place buy and sell orders
+        for buy_price, position in trader_data_prev["AMETHYSTS"]["buy_price"]:
+            buy_limit = position_limit - current_position
+            buy_order = Order("AMETHYSTS", buy_price, int(position * buy_limit))
+            orders.append(buy_order)
+        for sell_price, position in trader_data_prev["AMETHYSTS"]["sell_price"]:
+            sell_limit = position_limit + current_position
+            sell_order = Order("AMETHYSTS", sell_price, -int(position * sell_limit))
+            orders.append(sell_order)
+
+        result['AMETHYSTS'] = orders
+
+        """
+        TODO: Strategy for trading STARFRUIT
+        """
+
+        # Format the output
+        trader_data = jsonpickle.encode(trader_data_prev)
 
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data

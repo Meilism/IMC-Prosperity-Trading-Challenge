@@ -28,13 +28,6 @@ To use the visualizer, follow the steps below:
 3. After the server finishes the simulation, download the log file from the server and upload it to the visualizer.
 4. Check out the performance of your trading strategy there!
 
-## Notebooks for visualization and analysis
-The [analysis.ipynb](analysis.ipynb) notebook is provided to visualize the trading performance as well as market dynamics.
-
-The code loads the second and third part of the generated log file ("activity log" and "trade history") into pandas [DataFrame](https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.html) objects, which can be further analyzed for building predictive models.
-
-We could potentially build our own back-testing models to test the trading strategy before deploying it to the server with the extracted test data from the log file.
-
 ## Use `traderData` to store data between iterations
 The algorithm needs some data to make trading decisions, which should be stored in the `traderData` object to make sure it is persistent between iterations.
 
