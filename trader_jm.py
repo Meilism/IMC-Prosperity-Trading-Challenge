@@ -5,8 +5,8 @@ from typing import Any, List
 TRADER_DATA = {
     'AMETHYSTS': {
         'position_limit': 20,
-        'buy_price': [(9998, 0.3), (9996, 0.3), (9995, 0.4)],
-        'sell_price': [(10002, 0.3), (1004, 0.3), (1005, 0.4)],
+        'buy_price': [(9998, 0.3), (9996, 0.6), (9995, 0.1)],
+        'sell_price': [(10002, 0.3), (10004, 0.6), (10005, 0.1)],
     },
     'STARFRUIT': {
         'position_limit': 20,
