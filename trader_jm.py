@@ -5,8 +5,8 @@ from typing import Any, List
 TRADER_DATA = {
     'AMETHYSTS': {
         'position_limit': 20,
-        'buy_price': [(9998, 0.3), (9996, 0.6), (9995, 0.1)],
-        'sell_price': [(10002, 0.3), (10004, 0.6), (10005, 0.1)],
+        'buy_price': [(9998, 0.8), (9996, 0.2)],
+        'sell_price': [(10002, 0.8), (10004, 0.2)],
     },
     'STARFRUIT': {
         'position_limit': 20,
@@ -119,13 +119,15 @@ class Trader:
 
         # Place buy and sell orders
         for buy_price, position in trader_data_prev["AMETHYSTS"]["buy_price"]:
-            buy_limit = position_limit - current_position
-            buy_order = Order("AMETHYSTS", buy_price, int(position * buy_limit))
-            orders.append(buy_order)
+            buy_quantity = int(position * (position_limit - current_position))
+            if buy_quantity > 0:
+                buy_order = Order("AMETHYSTS", buy_price, buy_quantity)
+                orders.append(buy_order)
         for sell_price, position in trader_data_prev["AMETHYSTS"]["sell_price"]:
-            sell_limit = position_limit + current_position
-            sell_order = Order("AMETHYSTS", sell_price, -int(position * sell_limit))
-            orders.append(sell_order)
+            sell_quantity = int(position * (position_limit + current_position))
+            if sell_quantity > 0:
+                sell_order = Order("AMETHYSTS", sell_price, -sell_quantity)
+                orders.append(sell_order)
 
         result['AMETHYSTS'] = orders
 
