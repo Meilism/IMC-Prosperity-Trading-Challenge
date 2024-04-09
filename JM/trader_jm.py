@@ -14,6 +14,7 @@ TRADER_DATA = {
         'sell_fraction': [(2, 0.6), (4, 0.2), (5, 0.1)],
     },
     'STARFRUIT': {
+
     },
 }
 
@@ -132,6 +133,8 @@ class Trader:
                         bid_amount = min(bid_amount, sell_limit)
                         orders.append(Order("AMETHYSTS", bid, -bid_amount))
                         sell_limit -= bid_amount
+                    else:
+                        break
         
             if len(order_depth.sell_orders) > 0:
                 for ask, ask_amount in order_depth.sell_orders.items():
@@ -139,6 +142,8 @@ class Trader:
                         ask_amount = min(-ask_amount, buy_limit)
                         orders.append(Order("AMETHYSTS", ask, ask_amount))
                         buy_limit -= ask_amount
+                    else:
+                        break
 
         # "Market maker": Place buy and sell orders at certain price levels
         for buy_price_diff, buy_fraction in trader_data_prev["AMETHYSTS"]["buy_fraction"]:
@@ -166,9 +171,10 @@ class Trader:
         orders = []
 
         # "Market taker": Look at order depths to find profitable trades
-
+        
 
         # "Market maker": Place buy and sell orders at certain price levels
+
 
         # Format the output
         trader_data = jsonpickle.encode(trader_data_prev)
