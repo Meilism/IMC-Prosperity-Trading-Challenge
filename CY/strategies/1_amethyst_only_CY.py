@@ -1,41 +1,40 @@
-import json
+import json, jsonpickle
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
-from typing import Any
+from typing import Any, List
+
+TRADER_DATA = {
+    'AMETHYSTS': {
+        'position_limit': 20,
+        'buy_price': [(9998, 0.8), (9996, 0.2)],
+        'sell_price': [(10002, 0.8), (10004, 0.2)],
+    },
+    'STARFRUIT': {
+        'position_limit': 20,
+    },
+}
 
 class Logger:
     def __init__(self) -> None:
         self.logs = ""
-        self.max_log_length = 3750
 
     def print(self, *objects: Any, sep: str = " ", end: str = "\n") -> None:
         self.logs += sep.join(map(str, objects)) + end
 
     def flush(self, state: TradingState, orders: dict[Symbol, list[Order]], conversions: int, trader_data: str) -> None:
-        base_length = len(self.to_json([
-            self.compress_state(state, ""),
+        print(json.dumps([
+            self.compress_state(state),
             self.compress_orders(orders),
             conversions,
-            "",
-            "",
-        ]))
-
-        # We truncate state.traderData, trader_data, and self.logs to the same max. length to fit the log limit
-        max_item_length = (self.max_log_length - base_length) // 3
-
-        print(self.to_json([
-            self.compress_state(state, self.truncate(state.traderData, max_item_length)),
-            self.compress_orders(orders),
-            conversions,
-            self.truncate(trader_data, max_item_length),
-            self.truncate(self.logs, max_item_length),
-        ]))
+            trader_data,
+            self.logs,
+        ], cls=ProsperityEncoder, separators=(",", ":")))
 
         self.logs = ""
 
-    def compress_state(self, state: TradingState, trader_data: str) -> list[Any]:
+    def compress_state(self, state: TradingState) -> list[Any]:
         return [
             state.timestamp,
-            trader_data,
+            state.traderData,
             self.compress_listings(state.listings),
             self.compress_order_depths(state.order_depths),
             self.compress_trades(state.own_trades),
@@ -96,56 +95,48 @@ class Logger:
 
         return compressed
 
-    def to_json(self, value: Any) -> str:
-        return json.dumps(value, cls=ProsperityEncoder, separators=(",", ":"))
-
-    def truncate(self, value: str, max_length: int) -> str:
-        if len(value) <= max_length:
-            return value
-
-        return value[:max_length - 3] + "..."
-
 logger = Logger()
 
 class Trader:
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
-        orders = {}
+        result = {}
         conversions = 0
         trader_data = ""
-
-        # TODO: Add logic
-        logger.print("traderData: " + state.traderData)
-        logger.print("Observations: " + str(state.observations))
-
-        # Orders to be placed on exchange matching engine
-        result = {}
-        for product in state.order_depths:
-            order_depth: OrderDepth = state.order_depths[product]
-            orders: List[Order] = []
-            acceptable_price = 10  # Participant should calculate this value
-            logger.print("Acceptable price : " + str(acceptable_price))
-            logger.print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
-    
-            if len(order_depth.sell_orders) != 0:
-                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
-                if int(best_ask) < acceptable_price:
-                    logger.print("BUY", str(-best_ask_amount) + "x", best_ask)
-                    orders.append(Order(product, best_ask, -best_ask_amount))
-    
-            if len(order_depth.buy_orders) != 0:
-                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
-                if int(best_bid) > acceptable_price:
-                    logger.print("SELL", str(best_bid_amount) + "x", best_bid)
-                    orders.append(Order(product, best_bid, -best_bid_amount))
-            
-            result[product] = orders
-    
-		    # String value holding Trader state data required. 
-				# It will be delivered as TradingState.traderData on next execution.
-        traderData = "SAMPLE" 
         
-				# Sample conversion request. Check more details below. 
-        conversions = 1
+        # Initialize traderData in the first iteration
+        if state.traderData == "":
+            trader_data_prev = TRADER_DATA
+        else:
+            trader_data_prev = jsonpickle.decode(state.traderData)
+
+        """
+        Strategy for trading AMETHYSTS
+        """
+
+        current_position = state.position.get("AMETHYSTS",0)
+        position_limit = trader_data_prev["AMETHYSTS"]["position_limit"]
+        orders = []
+
+        # Place buy and sell orders
+        for buy_price, position in trader_data_prev["AMETHYSTS"]["buy_price"]:
+            buy_quantity = int(position * (position_limit - current_position))
+            if buy_quantity > 0:
+                buy_order = Order("AMETHYSTS", buy_price, buy_quantity)
+                orders.append(buy_order)
+        for sell_price, position in trader_data_prev["AMETHYSTS"]["sell_price"]:
+            sell_quantity = int(position * (position_limit + current_position))
+            if sell_quantity > 0:
+                sell_order = Order("AMETHYSTS", sell_price, -sell_quantity)
+                orders.append(sell_order)
+
+        result['AMETHYSTS'] = orders
+
+        """
+        TODO: Strategy for trading STARFRUIT
+        """
+
+        # Format the output
+        trader_data = jsonpickle.encode(trader_data_prev)
 
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data
