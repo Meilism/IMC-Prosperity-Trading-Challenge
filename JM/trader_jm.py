@@ -2,14 +2,19 @@ import json, jsonpickle
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 from typing import Any, List
 
+POSITION_LIMIT = {
+    'AMETHYSTS': 20,
+    'STARFRUIT': 20,
+}
+
 TRADER_DATA = {
     'AMETHYSTS': {
-        'position_limit': 20,
-        'buy_price': [(9998, 0.8), (9996, 0.2)],
-        'sell_price': [(10002, 0.8), (10004, 0.2)],
+        'acceptable_price': 10000,
+        'buy_fraction': [(-2, 0.6), (-4, 0.2), (-5, 0.1)],
+        'sell_fraction': [(2, 0.6), (4, 0.2), (5, 0.1)],
     },
     'STARFRUIT': {
-        'position_limit': 20,
+
     },
 }
 
@@ -98,7 +103,7 @@ class Logger:
 logger = Logger()
 
 class Trader:
-    def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
+    def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:        
         result = {}
         conversions = 0
         trader_data = ""
@@ -110,23 +115,47 @@ class Trader:
             trader_data_prev = jsonpickle.decode(state.traderData)
 
         """
-        Strategy for trading AMETHYSTS
+        Strategy for trading AMETHYSTS: static market making
         """
 
-        current_position = state.position.get("AMETHYSTS",0)
-        position_limit = trader_data_prev["AMETHYSTS"]["position_limit"]
+        position = state.position.get("AMETHYSTS",0)
+        position_limit = POSITION_LIMIT["AMETHYSTS"]
+        buy_limit = position_limit - position
+        sell_limit = position_limit + position
         orders = []
 
-        # Place buy and sell orders
-        for buy_price, position in trader_data_prev["AMETHYSTS"]["buy_price"]:
-            buy_quantity = int(position * (position_limit - current_position))
+        # "Market taker": Look at order depths to find profitable trades
+        order_depth = state.order_depths.get("AMETHYSTS", None)
+        if order_depth:
+            if len(order_depth.buy_orders) > 0:
+                for bid, bid_amount in order_depth.buy_orders.items():
+                    if bid > trader_data_prev["AMETHYSTS"]["acceptable_price"]:
+                        bid_amount = min(bid_amount, sell_limit)
+                        orders.append(Order("AMETHYSTS", bid, -bid_amount))
+                        sell_limit -= bid_amount
+                    else:
+                        break
+        
+            if len(order_depth.sell_orders) > 0:
+                for ask, ask_amount in order_depth.sell_orders.items():
+                    if ask < trader_data_prev["AMETHYSTS"]["acceptable_price"]:
+                        ask_amount = min(-ask_amount, buy_limit)
+                        orders.append(Order("AMETHYSTS", ask, ask_amount))
+                        buy_limit -= ask_amount
+                    else:
+                        break
+
+        # "Market maker": Place buy and sell orders at certain price levels
+        for buy_price_diff, buy_fraction in trader_data_prev["AMETHYSTS"]["buy_fraction"]:
+            buy_quantity = int(buy_fraction * buy_limit)
             if buy_quantity > 0:
-                buy_order = Order("AMETHYSTS", buy_price, buy_quantity)
+                buy_order = Order("AMETHYSTS", buy_price_diff + trader_data_prev["AMETHYSTS"]["acceptable_price"], buy_quantity)
                 orders.append(buy_order)
-        for sell_price, position in trader_data_prev["AMETHYSTS"]["sell_price"]:
-            sell_quantity = int(position * (position_limit + current_position))
+
+        for sell_price_diff, sell_fraction in trader_data_prev["AMETHYSTS"]["sell_fraction"]:
+            sell_quantity = int(sell_fraction * sell_limit)
             if sell_quantity > 0:
-                sell_order = Order("AMETHYSTS", sell_price, -sell_quantity)
+                sell_order = Order("AMETHYSTS", sell_price_diff + trader_data_prev["AMETHYSTS"]["acceptable_price"], -sell_quantity)
                 orders.append(sell_order)
 
         result['AMETHYSTS'] = orders
@@ -134,6 +163,18 @@ class Trader:
         """
         TODO: Strategy for trading STARFRUIT
         """
+
+        position = state.position.get("STARFRUIT",0)
+        position_limit = POSITION_LIMIT["STARFRUIT"]
+        buy_limit = position_limit - position
+        sell_limit = position_limit + position
+        orders = []
+
+        # "Market taker": Look at order depths to find profitable trades
+        
+
+        # "Market maker": Place buy and sell orders at certain price levels
+
 
         # Format the output
         trader_data = jsonpickle.encode(trader_data_prev)
