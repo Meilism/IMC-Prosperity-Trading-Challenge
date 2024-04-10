@@ -103,7 +103,7 @@ class Trader:
     
     def __init__(self) -> None:
         self.product_infor = {}
-        self.maxlookback = 6
+        self.maxlookback = 10
 
     def movingaverage(self, name, product, cat , expparameter = 0 ):
         rawweight = np.linspace(1,len(self.product_infor[product][cat]), len(self.product_infor[product][cat]))
@@ -140,11 +140,13 @@ class Trader:
         
         position_limit = 20
 
-        pricetype = 'mid'  ##mid, mean
+        pricetype = 'mean'  ##mid, mean
         spreadtype = 'std' ##std, spread
         prefactor = 0
-        weighted = False ##weighted mid
-        self.maxlookback = 8
+        weighted = True ##weighted mid
+
+        self.maxlookback = 6
+
         MovingAverageType = 'Linear'  ##Linear, Exp
         MovingParameters = 0
 
