@@ -137,7 +137,7 @@ class Trader:
         #print("traderData: " + state.traderData)
         #print("Observations: " + str(state.observations))
         
-        
+        POSITION_LIMIT = 20
         position_limit = 20
 
         pricetype = 'mean'  ##mid, mean
@@ -164,7 +164,7 @@ class Trader:
             traderData=''
         
             
-            a=0 #low
+            a= 0  #low
             b= 0 #high
             acceptablebuy_price = 10000+a
             acceptablesell_price = 10000+b
@@ -177,8 +177,7 @@ class Trader:
             
         #   print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
             Sell_Order, Buy_Order = [], []
-
-                    
+               
             if len(order_depth.buy_orders) != 0: ##someone in market want to buy, we want to sell them      
                 Buy_Order = sorted(list(order_depth.buy_orders.items()), key=lambda x: -x[0]  )
     
@@ -207,8 +206,16 @@ class Trader:
                     Sumprice += ask*(-amount)
                     Sumpricesquare += (ask**2)*(-amount)
                     totalnum += -amount
-
             
+            if cur_position>0:
+                orders.append(Order(product, 10002, -(cur_position))) ##sell all 10002
+            else: ##cur_position <0
+                orders.append(Order(product, 9998,  -cur_position)) ##buy all 9998
+
+                
+
+          
+
 
             result[product] = orders
     

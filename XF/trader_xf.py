@@ -114,6 +114,7 @@ class Trader:
         acceptable_price = sum(np.array(self.product_infor[product][cat]) * weight)/sum(weight)
         return acceptable_price
     
+    
     def midprice_spread(self,  buyorder = [], sellorder = [],Weighted_mid =True):
         if len(buyorder) == 0 and len(sellorder) ==0:
             return 'No_Mid'
@@ -140,15 +141,15 @@ class Trader:
         
         position_limit = 20
 
-        pricetype = 'mean'  ##mid, mean
-        spreadtype = 'std' ##std, spread
-        prefactor = 0
-        weighted = True ##weighted mid
+        #pricetype = 'mid'  ##mid, mean
+        #spreadtype = 'std' ##std, spread
+        #prefactor = 0
+        #weighted = True ##weighted mid
 
-        self.maxlookback = 6
+        #self.maxlookback = 10
 
-        MovingAverageType = 'Linear'  ##Linear, Exp
-        MovingParameters = 0
+        #MovingAverageType = 'Exp'  ##Linear, Exp
+        #MovingParameters = 0
 
         if state.traderData != "":
             self.product_infor = jsonpickle.decode(state.traderData)
@@ -160,27 +161,73 @@ class Trader:
             orders: List[Order] = []
             
             
+            if product =='AMETHYSTS':
             
-            
-            
-            if product not in self.product_infor:
-                self.product_infor[product] ={'mean':[],'std':[],'mid':[],'spread':[]}
-            
-            if len(self.product_infor[product][pricetype]) < self.maxlookback:
-                acceptablebuy_price = 0
-                acceptablesell_price = float('inf')
-            else:
-                acceptablebuy_price = self.movingaverage(MovingAverageType, product,pricetype,MovingParameters)
-                acceptablesell_price = acceptablebuy_price
-           
-            if len(self.product_infor[product][spreadtype]) < self.maxlookback:
-                estimate_spread = 0
-            else:
-                estimate_spread = self.movingaverage('Linear', product,spreadtype,MovingParameters)
-            
+                pricetype = 'mid'  ##mid, mean
+                spreadtype = 'std' ##std, spread
+                prefactor1 = 0.25
+                prefactor2 = 0.25
+                weighted = False ##weighted mid
 
-                acceptablebuy_price -= estimate_spread*prefactor
-                acceptablesell_price += estimate_spread*prefactor
+                self.maxlookback = 10
+
+                MovingAverageType = 'Exp'  ##Linear, Exp
+                MovingParameters = 0 ## 0 for linear
+
+
+            
+                if product not in self.product_infor:
+                    self.product_infor[product] ={'mean':[],'std':[],'mid':[],'spread':[]}
+                
+                if len(self.product_infor[product][pricetype]) < self.maxlookback:
+                    acceptablebuy_price = 0
+                    acceptablesell_price = float('inf')
+                else:
+                    acceptablebuy_price = self.movingaverage(MovingAverageType, product,pricetype,MovingParameters)
+                    acceptablesell_price = acceptablebuy_price
+            
+                if len(self.product_infor[product][spreadtype]) < self.maxlookback:
+                    estimate_spread = 0
+                else:
+                    estimate_spread = self.movingaverage('Linear', product,spreadtype,MovingParameters)
+                
+            else: 
+
+                pricetype = 'mean'  ##mid, mean
+                spreadtype = 'std' ##std, spread
+                prefactor1 = 0.8
+                prefactor2 = 0.8
+                weighted = False ##weighted mid
+
+                self.maxlookback = 10
+
+                MovingAverageType = 'Exp'  ##Linear, Exp
+                MovingParameters = 2
+
+            
+                if product not in self.product_infor:
+                    self.product_infor[product] ={'mean':[],'std':[],'mid':[],'spread':[]}
+                
+                if len(self.product_infor[product][pricetype]) < self.maxlookback:
+                    acceptablebuy_price = 0
+                    acceptablesell_price = float('inf')
+                else:
+                    acceptablebuy_price = self.movingaverage(MovingAverageType, product,pricetype,MovingParameters)
+                   # m,b = np.polyfit(np.linspace(1,len(self.product_infor[product][pricetype]), len(self.product_infor[product][pricetype])),np.array(self.product_infor[product][pricetype]),1 )
+                    #acceptablebuy_price =m*(len(self.product_infor[product][pricetype])+1)+b
+                    acceptablesell_price = acceptablebuy_price
+            
+                if len(self.product_infor[product][spreadtype]) < self.maxlookback:
+                    estimate_spread = 0
+                else:
+                    estimate_spread = self.movingaverage('Linear', product,spreadtype,MovingParameters)
+                
+
+
+
+
+           # acceptablebuy_price -= estimate_spread*prefactor
+           # acceptablesell_price += estimate_spread*prefactor
 
             Sumprice = 0
             Sumpricesquare = 0
@@ -217,7 +264,12 @@ class Trader:
                             orders.append(Order(product, bid, -sellamount))
                     Sumprice += bid*(amount)
                     Sumpricesquare += (bid**2)*amount
-                    totalnum += amount
+                    totalnum += amount        
+            if cur_position>0:
+                orders.append(Order(product, round(acceptablesell_price+estimate_spread*prefactor1), -(cur_position))) ##sell all 10002
+            else: ##cur_position <0
+                orders.append(Order(product, round(acceptablebuy_price-estimate_spread*prefactor2),  -cur_position)) ##buy all 9998
+
 
             average = Sumprice/totalnum
             averagesquare = Sumpricesquare/totalnum
