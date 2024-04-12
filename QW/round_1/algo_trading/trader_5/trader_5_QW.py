@@ -154,7 +154,7 @@ class Trader:
             mid_price = (best_ask + best_bid) / 2
 
             trader_data[product]["mid price"].append(mid_price)
-            trader_data[product]["mid price"] = trader_data[product]["mid price"][-samp_size:] # only keep the last samp_size elements to avoid memory overflow
+            trader_data[product]["mid price"] = trader_data[product]["mid price"][-samp_size:] # necessary, otherwise runs significantly slower
 
             if len(trader_data[product]["expected price"]) == 0:
                 trader_data[product]["expected price"].append(mid_price)
@@ -164,7 +164,7 @@ class Trader:
                 d = (trader_data[product]["mid price"][-1] - trader_data[product]["expected price"][-1])*(-0.7086)
                 acceptable_price = mid_price + d
                 trader_data[product]["expected price"].append(acceptable_price)
-
+                trader_data[product]["expected price"] = trader_data[product]["expected price"][-samp_size:] # necessary, otherwise runs significantly slower
             if len(trader_data[product]["mid price"]) < samp_size:
                 continue
 
