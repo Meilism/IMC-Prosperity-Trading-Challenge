@@ -187,7 +187,7 @@ class Trader:
                             sellamount = min(cur_position+position_limit, amount) ## sellamount is a postive number
                             cur_position -= sellamount ## after sell need to subtract it
                             logger.print("SELL", str(sellamount) + "x", bid)
-                            orders.append(Order(product, bid, -sellamount))
+                       #     orders.append(Order(product, bid, -sellamount))
                     Sumprice += bid*(amount)
                     Sumpricesquare += (bid**2)*amount
                     totalnum += amount
@@ -202,15 +202,15 @@ class Trader:
                             buyamount = min(position_limit-cur_position,-amount)
                             cur_position += buyamount
                             logger.print("BUY", str(buyamount) + "x", ask)
-                            orders.append(Order(product, ask, buyamount)) 
+             #               orders.append(Order(product, ask, buyamount)) 
                     Sumprice += ask*(-amount)
                     Sumpricesquare += (ask**2)*(-amount)
                     totalnum += -amount
             
-            if cur_position>0:
-                orders.append(Order(product, 10002, -(cur_position))) ##sell all 10002
-            else: ##cur_position <0
-                orders.append(Order(product, 9998,  -cur_position)) ##buy all 9998
+         #   if cur_position>0:
+           #     orders.append(Order(product, 10002, -(cur_position))) ##sell all 10002
+          #  else: ##cur_position <0
+            #    orders.append(Order(product, 9998,  -cur_position)) ##buy all 9998
 
                 
 

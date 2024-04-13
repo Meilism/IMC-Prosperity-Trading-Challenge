@@ -165,8 +165,8 @@ class Trader:
             
                 pricetype = 'mid'  ##mid, mean
                 spreadtype = 'std' ##std, spread
-                prefactor1 = 0.5
-                prefactor2 = 0.5
+                prefactor1 = 0.8
+                prefactor2 = 0.8
                 weighted = False ##weighted mid
 
                 self.maxlookback = 10
@@ -190,8 +190,7 @@ class Trader:
                     estimate_spread = 0
                 else:
                     estimate_spread = self.movingaverage('Linear', product,spreadtype,MovingParameters)
-                acceptablebuy_price = 10000
-                acceptablesell_price = 10000
+                
             else: 
 
                 pricetype = 'mean'  ##mid, mean
@@ -242,7 +241,7 @@ class Trader:
                 Sell_Order = sorted(list(order_depth.sell_orders.items()), key=lambda x: x[0]  )
             
                 for ask, amount in Sell_Order: ##amount is negative we want to buy
-                    if ask <= acceptablebuy_price: ##buy
+                    if ask < acceptablebuy_price: ##buy
                     #    print('kk')
                         if cur_position < position_limit:
                             buyamount = min(position_limit-cur_position,-amount)
@@ -257,7 +256,7 @@ class Trader:
                 Buy_Order = sorted(list(order_depth.buy_orders.items()), key=lambda x: -x[0]  )
     
                 for bid, amount in Buy_Order: ##amount is postive number, we want to sell
-                    if bid >= acceptablesell_price: ##sell
+                    if bid > acceptablesell_price: ##sell
                         if cur_position >-position_limit: 
                             sellamount = min(cur_position+position_limit, amount) ## sellamount is a postive number
                             cur_position -= sellamount ## after sell need to subtract it
