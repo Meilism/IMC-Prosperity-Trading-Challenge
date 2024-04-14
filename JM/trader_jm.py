@@ -1,7 +1,12 @@
 import json, jsonpickle
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 from typing import Any, List, Dict
-from collections import defaultdict
+
+PRODUCTS = [
+    "AMETHYSTS",
+    "STARFRUIT",
+    # "ORCHIDS",
+]
 
 TRADER_DATA = {
     'AMETHYSTS': {
@@ -9,56 +14,62 @@ TRADER_DATA = {
         'POS_LIMIT': 20,
         'num_buy': 0,
         'num_sell': 0,
-        'current_position': None,
 
         'price_method': 'static',
         'strategy': ['market_take', 'market_make'],
         'expected_mid_price': 10000,
 
-        'take_position_stage': (0, 20),
-        'take_price_spread': ((2, 2), (2, 0)),
+        'take_position_stage': [0, 20],
+        'take_price_spread': [(2, 2), (2, 0)],
 
-        'make_position_stage': (0, 15, 20),
-        'make_price_spread': ((2, 2), (2, 2), (2, 0)),
+        'make_position_stage': [0, 15, 20],
+        'make_price_spread': [(2, 2), (2, 1), (2, 0)],
+        'make_price_offset': [1, 1],
 
     },
     
-    # 'STARFRUIT': {
+    'STARFRUIT': {
 
-    #     'POS_LIMIT': 20,
-    #     'num_buy': 0,
-    #     'num_sell': 0,
-    #     'current_position': None,
+        'POS_LIMIT': 20,
+        'num_buy': 0,
+        'num_sell': 0,
 
-    #     # 'price_method': 'MA_1',
-    #     'price_method': 'average',
-    #     'strategy': ['market_take', 'market_make'],
+        'strategy': ['market_take', 'market_make'],
 
-    #     # Stored mid_price data and parameters for mid_price calculation
-    #     'mid_price_data': [],
-    #     'price_data_size': 8,
+        # Data and parameters specific for mid_price calculation: method = "MA_1
+        'price_method': 'MA_1',
+        'expected_mid_price': None, 
+        'MA_coef': -0.7086,
+        'mid_price_data': [],
+        'price_data_size': 1,
 
-    #     # Data and parameters specific for mid_price calculation: method = "MA_1
-    #     # 'expected_mid_price': None, 
-    #     # 'expected_price_data': [],
-    #     # 'MA_coef': -0.7086,
+        # Data and parameters specific for mid_price calculation: method = "average"
+        # 'price_method': 'average',
+        # 'expected_mid_price': None,
+        # 'mid_price_data': [],
+        # 'price_data_size': 8,
 
-    #     # Data and parameters specific for mid_price calculation: method = "average"
-    #     'expected_mid_price': None,
+        # Data and parameters specific for mid_price calculation: method = "weighted_average"
+        # 'price_method': 'weighted_average',
+        # 'expected_mid_price': None,
+        # 'weights': [],
 
-    #     'take_position_stage': (0, 20),
-    #     'take_price_spread': ((2, 2), (2, 0)),
-    #     'make_price_spread': ((2, 2), (2, 2)),
+        'take_position_stage': [0, 20],
+        'take_price_spread': [(1, 1), (1, 0)],
 
-    # },
+        'make_position_stage': [20],
+        'make_price_spread': [(1, 1)],
+        'make_price_offset': [1, 1],
 
-    # 'ORCHIDS': {
+    },
 
-    #     'POS_LIMIT': 100,
-    #     'price_method': 'average_with_trend',
-    #     'strategy': ['local_sell_take', 'local_sell_make' 'foreign_buy'],
+    'ORCHIDS': {
 
-    # },
+        'POS_LIMIT': 100,
+        'price_method': 'static',
+        'strategy': ['local_sell_take', 'local_sell_make' 'foreign_buy'],
+
+    },
 }
 
 class Logger:
@@ -147,6 +158,25 @@ logger = Logger()
 
 class Trader:
 
+    def updatePrice(self, state: TradingState, product: Symbol, data: Dict[str, Any]) -> None:
+        # Update mid_price_data
+        best_ask = list(state.order_depths[product].sell_orders.items())[0][0]
+        best_bid = list(state.order_depths[product].buy_orders.items())[0][0]
+        mid_price = (best_ask + best_bid) / 2
+
+        data['mid_price_data'].append(mid_price)
+        if len(data['mid_price_data']) > data['price_data_size']:
+            data['mid_price_data'].pop(0)
+
+
+
+    def calculateAverage(self, data: list[int], weights: list[float]|None) -> int:
+        if weights:
+            return sum([data[i] * weights[i] for i in range(len(data))])/sum(weights)
+        return sum(data) / len(data)
+
+
+
     def getPriceSpread(self, position:int, stage:tuple[int], spread:tuple[tuple[int, int]]) -> tuple[int, int]:
         sign = 1 if position >= 0 else -1
         for i, pos in enumerate(stage):
@@ -158,38 +188,34 @@ class Trader:
     def updateTraderData(self, state: TradingState, trader_data: Dict[Symbol, Dict[str, Any]]) -> None:
         for product in trader_data:
             data = trader_data[product]
-            data['num_buy'] = 0
-            data['num_sell'] = 0
-            data['current_position'] = state.position.get(product, 0)
-
+            data['num_buy'] = data['num_sell'] = 0
+            
             if data['price_method'] == 'static':
                 continue
-            
-            # Update mid_price_data
-            best_ask = list(state.order_depths[product].sell_orders.items())[0][0]
-            best_bid = list(state.order_depths[product].buy_orders.items())[0][0]
-            mid_price = (best_ask + best_bid) / 2
 
-            data['mid_price_data'].append(mid_price)
-            if len(data['mid_price_data']) > data['price_data_size']:
-                data['mid_price_data'].pop(0)
             
             # Moving Average 1 model to predict mid_price
             if data['price_method'] == 'MA_1':
-
-                if len(data['expected_price_data']) == 0:
-                    data['expected_price_data'].append(data['mid_price_data'][-1])
+                
+                self.updatePrice(state, product, data)
+                if data['expected_mid_price'] is None:
+                    data['expected_mid_price'] = data['mid_price_data'][-1]
                 else:
-                    d = data['MA_coef'] * (data['mid_price_data'][-1] - data['expected_price_data'][-1])
-                    data['expected_price_data'].append(data['mid_price_data'][-1] + d)
-                    if len(data['expected_price_data']) > data['price_data_size']:
-                        data['expected_price_data'].pop(0)
-                data['expected_mid_price'] = data['expected_price_data'][-1]
+                    d = data['MA_coef'] * (data['mid_price_data'][-1] - data['expected_mid_price'])
+                    data['expected_mid_price'] = data['mid_price_data'][-1] + d
+
 
             # Simple Average model to predict mid_price
             elif data['price_method'] == 'average':
+
+                self.updatePrice(state, product, data)
                 if len(data['mid_price_data']) == data['price_data_size']:
-                    data['expected_mid_price'] = sum(data['mid_price_data'])/len(data['mid_price_data'])
+                    data['expected_mid_price'] = self.calculateAverage(data['mid_price_data'], None)
+
+
+            # Weighted Average model to predict mid_price
+            elif data['price_method'] == 'weighted_average':
+                pass
 
 
             elif data['price_method'] == 'average_with_trend':
@@ -198,16 +224,16 @@ class Trader:
 
 
     def computeTakeOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
+        if data['expected_mid_price'] is None:
+            return []
+
         orders = []
         buy_orders, sell_orders = state.order_depths[product].buy_orders.items(), state.order_depths[product].sell_orders.items()
         POS_LIMIT, position = data['POS_LIMIT'], state.position.get(product, 0)
-
-        buy_offset, sell_offset = self.getPriceSpread(data['current_position'], 
+        
+        buy_offset, sell_offset = self.getPriceSpread(position + data['num_buy'] - data['num_sell'], 
                                                       data['take_position_stage'], 
                                                       data['take_price_spread'])
-        
-        if data['expected_mid_price'] is None:
-            return orders
         
         acc_ask = data['expected_mid_price'] - buy_offset # price to buy, lower the better
         acc_bid = data['expected_mid_price'] + sell_offset # price to sell, higher the better
@@ -224,24 +250,36 @@ class Trader:
                 orders.append(Order(product, bid, -sell_amount))
                 data['num_sell'] += sell_amount
 
-        data['current_position'] += data['num_buy'] - data['num_sell']
-
         return orders
     
 
 
     def computeMakeOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
+        if data['expected_mid_price'] is None:
+            return []
+        
         orders = []
         best_bid = list(state.order_depths[product].buy_orders.items())[0][0]
         best_ask = list(state.order_depths[product].sell_orders.items())[0][0]
-        undercut_bid, undercut_ask = best_bid + 1, best_ask - 1
-        
-        buy_offset, sell_offset = self.getPriceSpread(data['current_position'], 
+        position = state.position.get(product, 0)
+
+        buy_offset, sell_offset = self.getPriceSpread(position + data['num_buy'] - data['num_sell'], 
                                                       data['make_position_stage'], 
                                                       data['make_price_spread'])
-        our_bid = min(best_bid + 1, data['expected_mid_price'] - buy_offset)
-        our_ask = max(best_ask - 1, data['expected_mid_price'] + sell_offset)
 
+        our_bid = min(best_bid + buy_offset, data['expected_mid_price'] - data['make_price_offset'][0])
+        our_ask = max(best_ask - sell_offset, data['expected_mid_price'] + data['make_price_offset'][1])
+        buy_amount = data['POS_LIMIT'] - position - data['num_buy']
+        sell_amount = data['POS_LIMIT'] + position - data['num_sell']
+        
+        if buy_amount > 0:
+            orders.append(Order(product, our_bid, buy_amount))
+            data['num_buy'] += buy_amount
+
+        if sell_amount > 0:
+            orders.append(Order(product, our_ask, -sell_amount))
+            data['num_sell'] += sell_amount
+        
         return orders
     
 
@@ -279,7 +317,7 @@ class Trader:
         # Update trader data with new information and apply pricing models
         self.updateTraderData(state, trader_data)
 
-        for product in trader_data:
+        for product in PRODUCTS:
             orders = []
 
             for strategy in trader_data[product]["strategy"]:
@@ -305,5 +343,4 @@ class Trader:
         trader_data = jsonpickle.encode(trader_data)
 
         logger.flush(state, result, conversions, trader_data)
-        return result, conversions, trader_data
-    
+        return result, conversions, trader_data    
