@@ -7,36 +7,29 @@ TRADER_DATA = {
     'AMETHYSTS': {        
         'price_method': 'static',
 
-        'mid_price': 10000,
+        'expected_mid_price': 10000, # changed by QW
         'buy_price': 9998,
         'sell_price': 10002,
-
-        # 'mid_price': None,
-        # 'buy_price': None,
-        # 'sell_price': None,
-
+        
         'position_limit': 20,
         'position_stage_1': 0,
         'position_stage_2': 20,
         
-        'excess_buy': [(9995, 0.1), (9996, 0.1), (9998, 0.8)],
-        'excess_sell': [(10005, 0.1), (10004, 0.1), (10002, 0.8)],
-
-        # 'excess_buy': None,
-        # 'excess_sell': None,
+        # 'excess_buy': [(-5, .1), (-4, .1), (-2, .8)],
+        # 'excess_sell': [(5, .1), (4, .1), (2, .8)],
+        'excess_buy': [(-2, 1.)],
+        'excess_sell': [(2, 1.)],
+        # 'excess_buy': [(-4, .1), (-2, .9)],
+        # 'excess_sell': [(4, .1), (2, .9)],
     },
     'STARFRUIT': {
         'price_method': 'average',
         'price_data_size': 8,
-        'price_data': [],
+        'mid_price_data': [], # changed by QW
+        'expected_price_data': [], # changed by QW
         'price_spread': [-2, 2],
 
-        # 'price_method': 'weighted_average',
-        # 'price_data_size': 8,
-        # 'price_data': [],
-        # 'price_spread': [-2, 2],
-
-        'mid_price': None,
+        'expected_mid_price': None, # changed by QW
         'buy_price': None,
         'sell_price': None,
 
@@ -44,9 +37,27 @@ TRADER_DATA = {
         'position_stage_1': 0,
         'position_stage_2': 20,
         
+        # 'excess_buy': [(-3, .1), (-2, .9)],
+        # 'excess_sell': [(3, .1), (2, .9)],
+        'excess_buy': [(-2, 1.)],
+        'excess_sell': [(2, 1.)],
+    },
+
+    'ORCHIDS': {
+        'price_method': 'static',
+
+        'expected_mid_price': None,
+        'buy_price': None,
+        'sell_price': None,
+        
+        'position_limit': 100,
+        'position_stage_1': 0,
+        'position_stage_2': 20,
+        
         'excess_buy': None,
         'excess_sell': None,
     },
+
 }
 
 class Logger:
@@ -135,29 +146,33 @@ logger = Logger()
 
 class Trader:
     def updateTraderData(self, state: TradingState, trader_data: Dict[str, Any]) -> dict[str, Any]:
-        
         for product in trader_data:
             if trader_data[product]["price_method"] == "static":
                 pass
-
-            elif trader_data[product]["price_method"] == "average":
+            if trader_data[product]["price_method"] == "average":
                 assert product in state.order_depths
-
                 best_bid = list(state.order_depths[product].buy_orders.keys())[0]
                 best_ask = list(state.order_depths[product].sell_orders.keys())[0]
-                trader_data[product]["price_data"].append((best_bid + best_ask) / 2)
+                trader_data[product]["mid_price_data"].append((best_bid + best_ask) / 2)
+                if len(trader_data[product]["mid_price_data"]) > trader_data[product]["price_data_size"]:
+                    trader_data[product]["mid_price_data"].pop(0)
                 
-                if len(trader_data[product]["price_data"]) > trader_data[product]["price_data_size"]:
-                    trader_data[product]["price_data"].pop(0)
-                elif len(trader_data[product]["price_data"]) < trader_data[product]["price_data_size"]:
-                    continue
+                # Added by QW
+                # ------------------------------------------------------------------
+                if len(trader_data[product]["expected_price_data"]) == 0:
+                    trader_data[product]["expected_price_data"].append(trader_data[product]["mid_price_data"][-1])
+                else:
+                    d = (trader_data[product]["mid_price_data"][-1] - trader_data[product]["expected_price_data"][-1])*(-0.7086)
+                    trader_data[product]["expected_price_data"].append(trader_data[product]["mid_price_data"][-1] + d)
+                    if len(trader_data[product]["expected_price_data"]) > trader_data[product]["price_data_size"]:
+                        trader_data[product]["expected_price_data"].pop(0)
+                # ------------------------------------------------------------------
 
-                trader_data[product]["mid_price"] = round(sum(trader_data[product]["price_data"]) / len(trader_data[product]["price_data"]))
-                trader_data[product]["buy_price"] = trader_data[product]["mid_price"] + trader_data[product]["price_spread"][0]
-                trader_data[product]["sell_price"] = trader_data[product]["mid_price"] + trader_data[product]["price_spread"][1]
-                trader_data[product]['excess_buy'] = [(trader_data[product]["buy_price"], 1.)]
-                trader_data[product]['excess_sell'] = [(trader_data[product]["sell_price"], 1.)]
-            
+
+                trader_data[product]["expected_mid_price"] = round(trader_data[product]["expected_price_data"][-1]) # changed by QW
+                trader_data[product]["buy_price"] = trader_data[product]["expected_mid_price"] + trader_data[product]["price_spread"][0] # changed by QW
+                trader_data[product]["sell_price"] = trader_data[product]["expected_mid_price"] + trader_data[product]["price_spread"][1] # changed by QW
+
         return trader_data
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:        
@@ -170,9 +185,10 @@ class Trader:
         else:
             trader_data_prev = jsonpickle.decode(state.traderData)
 
-        # Update trader data with new information
+        # TODO: Update trader data with new information
         trader_data =  self.updateTraderData(state, trader_data_prev)
 
+        # "Market taker": Look at order depths to find profitable trades
         for product in state.order_depths:
             
             order_depth = state.order_depths[product]
@@ -186,7 +202,7 @@ class Trader:
             buy_orders, sell_orders = defaultdict(int), defaultdict(int)
 
             """
-            Market taker: Try to find profitable orders in the order depths
+            Try to find profitable orders in the order depths
             """
 
             # Try to match all buy orders with sell orders if prices are above sell price
@@ -204,9 +220,10 @@ class Trader:
                     i += 1
             
             # If position is still above stage 1, try to sell excess at above mid price
-            if trader_data[product]["mid_price"] is not None and num_sell == 0:
+            if trader_data[product]["expected_mid_price"] is not None: # changed by QW
+                i = 0
                 while (position - num_sell > position_stage_1) and i < len(outstanding_buy_orders) and \
-                         outstanding_buy_orders[i][0] >= trader_data[product]["mid_price"]:
+                         outstanding_buy_orders[i][0] >= trader_data[product]["expected_mid_price"]: # changed by QW
                     
                     bid, bid_amount = outstanding_buy_orders[i]
                     sell_amount = min([bid_amount, position - num_sell - position_stage_1])
@@ -231,10 +248,10 @@ class Trader:
                     i += 1
 
             # If position is still below - stage 1, try to buy excess at below mid price
-            if trader_data[product]["mid_price"] is not None and num_buy == 0:
+            if trader_data[product]["expected_mid_price"] is not None: # changed by QW
                 i = 0
                 while (position + num_buy < -position_stage_1) and i < len(outstanding_sell_orders) and \
-                         outstanding_sell_orders[i][0] <= trader_data[product]["mid_price"]:
+                         outstanding_sell_orders[i][0] <= trader_data[product]["expected_mid_price"]: # changed by QW
                     
                     ask, ask_amount = outstanding_sell_orders[i]
                     buy_amount = min([-ask_amount, -position - num_buy - position_stage_1])
@@ -250,22 +267,24 @@ class Trader:
 
             # If position is above stage 2 and no good order is found in market, try to sell excess at mid price
             # If position is below - stage 2 and no good order is found in market, try to buy excess at mid price
-            if position > position_stage_2 and num_sell == 0 and trader_data[product]["mid_price"] is not None:
-                sell_orders[trader_data[product]["mid_price"]] += position - position_stage_2
+            if position > position_stage_2 and num_sell == 0 and trader_data[product]["expected_mid_price"] is not None: # changed by QW
+                sell_orders[trader_data[product]["expected_mid_price"]] += position - position_stage_2 # changed by QW
                 num_sell += position - position_stage_2
-            elif position < -position_stage_2 and num_buy == 0 and trader_data[product]["mid_price"] is not None:
-                buy_orders[trader_data[product]["mid_price"]] += -position - position_stage_2
+            elif position < -position_stage_2 and num_buy == 0 and trader_data[product]["expected_mid_price"] is not None: # changed by QW
+                buy_orders[trader_data[product]["expected_mid_price"]] += -position - position_stage_2 # changed by QW
                 num_buy += -position - position_stage_2
 
             if trader_data[product]["excess_buy"] is not None:
-                for buy_price, buy_fraction in trader_data[product]["excess_buy"]:
+                for buy_price_diff, buy_fraction in trader_data[product]["excess_buy"]:
+                    buy_price = trader_data[product]["expected_mid_price"] + buy_price_diff
                     buy_quantity = int(buy_fraction * (buy_power - num_buy))
                     if buy_quantity > 0:
                         buy_orders[buy_price] += buy_quantity
                         num_buy += buy_quantity
 
             if trader_data[product]["excess_sell"] is not None:
-                for sell_price, sell_fraction in trader_data[product]["excess_sell"]:
+                for sell_price_diff, sell_fraction in trader_data[product]["excess_sell"]:
+                    sell_price = trader_data[product]["expected_mid_price"] + sell_price_diff
                     sell_quantity = int(sell_fraction * (sell_power - num_sell))
                     if sell_quantity > 0:
                         sell_orders[sell_price] += sell_quantity
@@ -275,17 +294,10 @@ class Trader:
             Format buy_orders and sell_orders into Order objects
             """
             orders = []
-            # for price, amount in sorted(list(buy_orders.items()), key=lambda x: x[0]):
-            #     orders.append(Order(product, price, amount))
-            # for price, amount in sorted(list(sell_orders.items()), key=lambda x: x[0], reverse=True):
-            #     orders.append(Order(product, price, -amount))
-
-            for price, amount in sorted(list(buy_orders.items()), key=lambda x: x[0], reverse=True):
+            for price, amount in sorted(buy_orders.items(), key=lambda x: x[0]):
                 orders.append(Order(product, price, amount))
-            for price, amount in sorted(list(sell_orders.items()), key=lambda x: x[0]):
+            for price, amount in sorted(sell_orders.items(), key=lambda x: x[0], reverse=True):
                 orders.append(Order(product, price, -amount))
-
-            logger.print(orders)
             result[product] = orders
 
         # Format the output
