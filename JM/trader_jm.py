@@ -66,6 +66,9 @@ TRADER_DATA = {
     'ORCHIDS': {
 
         'POS_LIMIT': 100,
+        'num_buy': 0,
+        'num_sell': 0,
+
         'price_method': 'static',
         'strategy': ['local_sell_take', 'local_sell_make' 'foreign_buy'],
 
@@ -202,7 +205,7 @@ class Trader:
                     data['expected_mid_price'] = data['mid_price_data'][-1]
                 else:
                     d = data['MA_coef'] * (data['mid_price_data'][-1] - data['expected_mid_price'])
-                    data['expected_mid_price'] = data['mid_price_data'][-1] + d
+                    data['expected_mid_price'] = round(data['mid_price_data'][-1] + d)
 
 
             # Simple Average model to predict mid_price
