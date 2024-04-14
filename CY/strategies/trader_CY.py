@@ -2,22 +2,23 @@ import json, jsonpickle
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 from typing import Any, List
 
-POSITION_LIMIT = {
-    'AMETHYSTS': 20,
-    'STARFRUIT': 20,
-}
-
-TRADER_DATA = {
+PARAMS = {
     'AMETHYSTS': {
-        'acceptable_price': 10000,
-        'buy_fraction': [(-2, 0.6), (-4, 0.2), (-5, 0.1)],
-        'sell_fraction': [(2, 0.6), (4, 0.2), (5, 0.1)],
+        'POSITION_LIMIT': 20,
+        'MID': 10000,
+        'TAKER_BID': 10000,
+        'TAKER_ASK': 10000,
+        'MAKER_BID': 9998,
+        'MAKER_ASK': 10002,
     },
     'STARFRUIT': {
+        'POSITION_LIMIT': 20,
 
+        'MID': None,
+        'BID': None,
+        'ASK': None,
     },
 }
-
 class Logger:
     def __init__(self) -> None:
         self.logs = ""
@@ -103,80 +104,95 @@ class Logger:
 logger = Logger()
 
 class Trader:
+    def take_orders_AMETHYSTS(self, product, state):
+        orders = []
+
+        order_depth  = state.order_depths[product]
+        position = state.position.get(product, 0)
+
+        for other_ask, volume in order_depth.sell_orders.items():
+            logger.print("here", other_ask, volume)
+            if ((other_ask < PARAMS[product]['TAKER_BID']) and
+                (position <  PARAMS[product]['POSITION_LIMIT'])):
+                order_size = min(-volume, PARAMS[product]['POSITION_LIMIT'] - position)
+                logger.print(order_size)
+                position += order_size
+                assert(order_size >= 0)
+                orders.append(Order(product, other_ask, order_size))
+
+        position = state.position.get(product, 0)
+
+        for other_bid, volume in order_depth.buy_orders.items():
+            logger.print("here2", other_bid, volume)
+            if ((other_bid > PARAMS[product]['TAKER_ASK']) and
+                (position > -PARAMS[product]['POSITION_LIMIT'])):
+                order_size = min(volume, PARAMS[product]['POSITION_LIMIT'] + position)
+                logger.print(order_size)
+                position -= order_size
+                assert(order_size >= 0)
+                orders.append(Order(product, other_bid, -order_size))
+
+        return orders
+
+    def make_orders_AMETHYSTS(self, product, state):
+        # edit this now
+        orders = []
+
+        order_size_bid =  PARAMS[product]['POSITION_LIMIT'] - state.position.get(product, 0)
+        order_size_ask = -PARAMS[product]['POSITION_LIMIT'] - state.position.get(product, 0)
+
+        orders.append(Order(product, PARAMS[product]['MAKER_BID'], order_size_bid))
+        orders.append(Order(product, PARAMS[product]['MAKER_ASK'], order_size_ask))
+
+        return orders
+
+
+    
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
         result = {}
         conversions = 0
         trader_data = ""
-        # Initialize traderData in the first iteration
-        if state.traderData == "":
-            trader_data_prev = TRADER_DATA
-        else:
-            trader_data_prev = jsonpickle.decode(state.traderData)
-
-        """
-        Strategy for trading AMETHYSTS: static market making
-        """
-
-        position = state.position.get("AMETHYSTS",0)
-        position_limit = POSITION_LIMIT["AMETHYSTS"]
-        buy_limit = position_limit - position
-        sell_limit = position_limit + position
         orders = []
 
-        # "Market taker": Look at order depths to find profitable trades
-        order_depth = state.order_depths.get("AMETHYSTS", None)
-        if order_depth:
-            if len(order_depth.buy_orders) > 0:
-                for bid, bid_amount in order_depth.buy_orders.items():
-                    if bid > trader_data_prev["AMETHYSTS"]["acceptable_price"]:
-                        bid_amount = min(bid_amount, sell_limit)
-                        orders.append(Order("AMETHYSTS", bid, -bid_amount))
-                        sell_limit -= bid_amount
-                    else:
-                        break
-        
-            if len(order_depth.sell_orders) > 0:
-                for ask, ask_amount in order_depth.sell_orders.items():
-                    if ask < trader_data_prev["AMETHYSTS"]["acceptable_price"]:
-                        ask_amount = min(-ask_amount, buy_limit)
-                        orders.append(Order("AMETHYSTS", ask, ask_amount))
-                        buy_limit -= ask_amount
-                    else:
-                        break
+        for product in state.listings:
+            if product == 'AMETHYSTS':
+                result[product] = self.take_orders_AMETHYSTS(product, state)
+                # result[product] = self.make_orders_AMETHYSTS(product, state)
+                # if product not in state.position:
+                #     state.position[product] = 0
 
-        # "Market maker": Place buy and sell orders at certain price levels
-        for buy_price_diff, buy_fraction in trader_data_prev["AMETHYSTS"]["buy_fraction"]:
-            buy_quantity = int(buy_fraction * buy_limit)
-            if buy_quantity > 0:
-                buy_order = Order("AMETHYSTS", buy_price_diff + trader_data_prev["AMETHYSTS"]["acceptable_price"], buy_quantity)
-                orders.append(buy_order)
+                # order_size_bid =  PARAMS[product]['POSITION_LIMIT'] - state.position[product]
+                # order_size_ask = -PARAMS[product]['POSITION_LIMIT'] - state.position[product]
 
-        for sell_price_diff, sell_fraction in trader_data_prev["AMETHYSTS"]["sell_fraction"]:
-            sell_quantity = int(sell_fraction * sell_limit)
-            if sell_quantity > 0:
-                sell_order = Order("AMETHYSTS", sell_price_diff + trader_data_prev["AMETHYSTS"]["acceptable_price"], -sell_quantity)
-                orders.append(sell_order)
+                # orders.append(Order(product, PARAMS[product]['MAKER_BID'], order_size_bid))
+                # orders.append(Order(product, PARAMS[product]['MAKER_ASK'], order_size_ask))
 
-        result['AMETHYSTS'] = orders
+                # result[product] = orders
 
-        """
-        TODO: Strategy for trading STARFRUIT
-        """
+        # for product, order_depth in state.order_depths.items():
+        #     if product == 'AMETHYSTS':
+        #         orders = []
+                
+                # Market-taking
+                # for 
+                # taker_bid = 9998
+                # taker_ask = 10002
 
-        position = state.position.get("STARFRUIT",0)
-        position_limit = POSITION_LIMIT["STARFRUIT"]
-        buy_limit = position_limit - position
-        sell_limit = position_limit + position
-        orders = []
+                # if product in state.position:
+                #     if state.position[product] > 0:
+                #         order_size_bid = state.position[product]
+                #         orders.append(Order(product, acceptable_bid, order_size_bid))
+                #     elif state.position[product] < 0:
+                #         acceptable_ask = 10002
+                #         order_size_ask = -state.position[product]
+                #         orders.append(Order(product, acceptable_ask, order_size_ask))
 
-        # "Market taker": Look at order depths to find profitable trades
-        
 
-        # "Market maker": Place buy and sell orders at certain price levels
+                # state.position[product]
 
 
         # Format the output
-        trader_data = jsonpickle.encode(trader_data_prev)
+        # trader_data = jsonpickle.encode(trader_data_prev)
             
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data

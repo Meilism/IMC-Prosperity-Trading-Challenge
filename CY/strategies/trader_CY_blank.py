@@ -2,17 +2,6 @@ import json, jsonpickle
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 from typing import Any, List
 
-TRADER_DATA = {
-    'AMETHYSTS': {
-        'position_limit': 20,
-        'buy_price': [(9998, 0.8), (9996, 0.2)],
-        'sell_price': [(10002, 0.8), (10004, 0.2)],
-    },
-    'STARFRUIT': {
-        'position_limit': 20,
-    },
-}
-
 class Logger:
     def __init__(self) -> None:
         self.logs = ""
@@ -103,40 +92,27 @@ class Trader:
         conversions = 0
         trader_data = ""
         
-        # Initialize traderData in the first iteration
-        if state.traderData == "":
-            trader_data_prev = TRADER_DATA
-        else:
-            trader_data_prev = jsonpickle.decode(state.traderData)
+        # TODO: Add your trading logic here
 
-        """
-        Strategy for trading AMETHYSTS
-        """
-
-        current_position = state.position.get("AMETHYSTS",0)
-        position_limit = trader_data_prev["AMETHYSTS"]["position_limit"]
-        orders = []
-
-        # Place buy and sell orders
-        for buy_price, position in trader_data_prev["AMETHYSTS"]["buy_price"]:
-            buy_quantity = int(position * (position_limit - current_position))
-            if buy_quantity > 0:
-                buy_order = Order("AMETHYSTS", buy_price, buy_quantity)
-                orders.append(buy_order)
-        for sell_price, position in trader_data_prev["AMETHYSTS"]["sell_price"]:
-            sell_quantity = int(position * (position_limit + current_position))
-            if sell_quantity > 0:
-                sell_order = Order("AMETHYSTS", sell_price, -sell_quantity)
-                orders.append(sell_order)
-
-        result['AMETHYSTS'] = orders
-
-        """
-        TODO: Strategy for trading STARFRUIT
-        """
-
-        # Format the output
-        trader_data = jsonpickle.encode(trader_data_prev)
-
+        # An example
+        for product in state.order_depths:
+            order_depth: OrderDepth = state.order_depths[product]
+            orders: List[Order] = []
+            acceptable_price = 10;  # Participant should calculate this value
+            logger.print("Acceptable price : " + str(acceptable_price))
+            logger.print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
+    
+            if len(order_depth.sell_orders) != 0:
+                best_ask, best_ask_amount = list(order_depth.sell_orders.items())[0]
+                if int(best_ask) < acceptable_price:
+                    logger.print("BUY", str(-best_ask_amount) + "x", best_ask)
+                    orders.append(Order(product, best_ask, -best_ask_amount))
+    
+            if len(order_depth.buy_orders) != 0:
+                best_bid, best_bid_amount = list(order_depth.buy_orders.items())[0]
+                if int(best_bid) > acceptable_price:
+                    logger.print("SELL", str(best_bid_amount) + "x", best_bid)
+                    orders.append(Order(product, best_bid, -best_bid_amount))
+            
         logger.flush(state, result, conversions, trader_data)
-        return result, conversions, trader_data
+        return result, conversions, trader_dataa
