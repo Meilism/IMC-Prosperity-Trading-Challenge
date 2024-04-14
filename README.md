@@ -9,7 +9,7 @@ conda activate trader
 ```
 Install the required packages:
 ```bash
-conda install pandas numpy jsonpickle matplotlib ipykernel
+conda install pandas numpy jsonpickle matplotlib ipykernel statsmodels
 ```
 Note that `matplotlib` is for visualization, `ipykernel` is required to run the jupyter notebook in the conda environment, neither of them is required for the trading simulation.
 
@@ -60,3 +60,6 @@ To use the `traderData` in the next iteration, deserialize the `string` object b
 ```python
 traderData = jsonpickle.decode(traderData)
 ```
+
+## Submissions
+Our submissions are stored under the `submissions` folder.

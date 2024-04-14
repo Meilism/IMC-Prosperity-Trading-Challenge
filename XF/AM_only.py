@@ -136,7 +136,7 @@ class Trader:
     def run(self,state: TradingState):
         #print("traderData: " + state.traderData)
         #print("Observations: " + str(state.observations))
-        
+        Logger.print(state.observations.conversionObservations['ORCHIDS'].bidPrice, 'bidPrice')
         POSITION_LIMIT = 20
         position_limit = 20
 
@@ -159,7 +159,9 @@ class Trader:
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
             
+                   
             
+
             
             traderData=''
         
