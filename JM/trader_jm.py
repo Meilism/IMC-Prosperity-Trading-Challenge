@@ -4,51 +4,61 @@ from typing import Any, List, Dict
 from collections import defaultdict
 
 TRADER_DATA = {
-    'AMETHYSTS': {        
+    'AMETHYSTS': {
+
+        'POS_LIMIT': 20,
+        'num_buy': 0,
+        'num_sell': 0,
+        'current_position': None,
+
         'price_method': 'static',
-
+        'strategy': ['market_take', 'market_make'],
         'expected_mid_price': 10000,
-        'buy_price': 9998,
-        'sell_price': 10002,
 
-        # 'mid_price': None,
-        # 'buy_price': None,
-        # 'sell_price': None,
+        'take_position_stage': (0, 20),
+        'take_price_spread': ((2, 2), (2, 0)),
 
-        'position_limit': 20,
-        'position_stage_1': 0,
-        'position_stage_2': 20,
-        
-        'excess_buy': [(9995, 0.1), (9996, 0.2), (9998, 0.7)],
-        'excess_sell': [(10005, 0.1), (10004, 0.2), (10002, 0.7)],
+        'make_position_stage': (0, 15, 20),
+        'make_price_spread': ((2, 2), (2, 2), (2, 0)),
 
-        # 'excess_buy': None,
-        # 'excess_sell': None,
     },
-    'STARFRUIT': {
-        # 'price_method': 'average',
-        # 'price_data_size': 8,
-        # 'mid_price_data': [],
-        # 'price_spread': [-2, 2],
+    
+    # 'STARFRUIT': {
 
-        'price_method': 'MA_1',
-        'coeff': -0.7086,
-        'mid_price_data': [],
-        'expected_price_data': [],
-        'price_spread': [-2, 2],
-        'price_data_size': 1,    
+    #     'POS_LIMIT': 20,
+    #     'num_buy': 0,
+    #     'num_sell': 0,
+    #     'current_position': None,
 
-        'expected_mid_price': None,
-        'buy_price': None,
-        'sell_price': None,
+    #     # 'price_method': 'MA_1',
+    #     'price_method': 'average',
+    #     'strategy': ['market_take', 'market_make'],
 
-        'position_limit': 20,
-        'position_stage_1': 0,
-        'position_stage_2': 20,
-        
-        'excess_buy': None,
-        'excess_sell': None,
-    },
+    #     # Stored mid_price data and parameters for mid_price calculation
+    #     'mid_price_data': [],
+    #     'price_data_size': 8,
+
+    #     # Data and parameters specific for mid_price calculation: method = "MA_1
+    #     # 'expected_mid_price': None, 
+    #     # 'expected_price_data': [],
+    #     # 'MA_coef': -0.7086,
+
+    #     # Data and parameters specific for mid_price calculation: method = "average"
+    #     'expected_mid_price': None,
+
+    #     'take_position_stage': (0, 20),
+    #     'take_price_spread': ((2, 2), (2, 0)),
+    #     'make_price_spread': ((2, 2), (2, 2)),
+
+    # },
+
+    # 'ORCHIDS': {
+
+    #     'POS_LIMIT': 100,
+    #     'price_method': 'average_with_trend',
+    #     'strategy': ['local_sell_take', 'local_sell_make' 'foreign_buy'],
+
+    # },
 }
 
 class Logger:
@@ -136,176 +146,158 @@ class Logger:
 logger = Logger()
 
 class Trader:
-    def updateTraderData(self, state: TradingState, trader_data: Dict[str, Any]) -> dict[str, Any]:
-        
+
+    def getPriceSpread(self, position:int, stage:tuple[int], spread:tuple[tuple[int, int]]) -> tuple[int, int]:
+        sign = 1 if position >= 0 else -1
+        for i, pos in enumerate(stage):
+            if abs(position) <= pos:
+                return spread[i][::sign]
+            
+
+
+    def updateTraderData(self, state: TradingState, trader_data: Dict[Symbol, Dict[str, Any]]) -> None:
         for product in trader_data:
-            if trader_data[product]["price_method"] == "static":
+            data = trader_data[product]
+            data['num_buy'] = 0
+            data['num_sell'] = 0
+            data['current_position'] = state.position.get(product, 0)
+
+            if data['price_method'] == 'static':
                 continue
-
-            elif trader_data[product]["price_method"] == "average":
-                assert product in state.order_depths
-
-                best_bid = list(state.order_depths[product].buy_orders.keys())[0]
-                best_ask = list(state.order_depths[product].sell_orders.keys())[0]
-                trader_data[product]["mid_price_data"].append((best_bid + best_ask) / 2)
-                
-                if len(trader_data[product]["mid_price_data"]) > trader_data[product]["price_data_size"]:
-                    trader_data[product]["mid_price_data"].pop(0)
-
-                trader_data[product]["expected_mid_price"] = round(sum(trader_data[product]["mid_price_data"]) / len(trader_data[product]["mid_price_data"]))
-                trader_data[product]["buy_price"] = trader_data[product]["expected_mid_price"] + trader_data[product]["price_spread"][0]
-                trader_data[product]["sell_price"] = trader_data[product]["expected_mid_price"] + trader_data[product]["price_spread"][1]
-                trader_data[product]['excess_buy'] = [(trader_data[product]["buy_price"], 1.)]
-                trader_data[product]['excess_sell'] = [(trader_data[product]["sell_price"], 1.)]
             
-            elif trader_data[product]["price_method"] == "MA_1":
-                assert product in state.order_depths
+            # Update mid_price_data
+            best_ask = list(state.order_depths[product].sell_orders.items())[0][0]
+            best_bid = list(state.order_depths[product].buy_orders.items())[0][0]
+            mid_price = (best_ask + best_bid) / 2
 
-                best_bid = list(state.order_depths[product].buy_orders.keys())[0]
-                best_ask = list(state.order_depths[product].sell_orders.keys())[0]
-                trader_data[product]["mid_price_data"].append((best_bid + best_ask) / 2)
+            data['mid_price_data'].append(mid_price)
+            if len(data['mid_price_data']) > data['price_data_size']:
+                data['mid_price_data'].pop(0)
+            
+            # Moving Average 1 model to predict mid_price
+            if data['price_method'] == 'MA_1':
 
-                # Added by QW
-                # ------------------------------------------------------------------
-                if len(trader_data[product]["expected_price_data"]) == 0:
-                    trader_data[product]["expected_price_data"].append(trader_data[product]["mid_price_data"][-1])
+                if len(data['expected_price_data']) == 0:
+                    data['expected_price_data'].append(data['mid_price_data'][-1])
                 else:
-                    d = (trader_data[product]["mid_price_data"][-1] - trader_data[product]["expected_price_data"][-1]
-                         )*(trader_data[product]["coeff"])
-                    trader_data[product]["expected_price_data"].append(trader_data[product]["mid_price_data"][-1] + d)
-                    
-                    if len(trader_data[product]["expected_price_data"]) > trader_data[product]["price_data_size"]:
-                        trader_data[product]["expected_price_data"].pop(0)
-                # ------------------------------------------------------------------
+                    d = data['MA_coef'] * (data['mid_price_data'][-1] - data['expected_price_data'][-1])
+                    data['expected_price_data'].append(data['mid_price_data'][-1] + d)
+                    if len(data['expected_price_data']) > data['price_data_size']:
+                        data['expected_price_data'].pop(0)
+                data['expected_mid_price'] = data['expected_price_data'][-1]
 
-                trader_data[product]["expected_mid_price"] = round(trader_data[product]["expected_price_data"][-1]) # changed by QW
-                trader_data[product]["buy_price"] = trader_data[product]["expected_mid_price"] + trader_data[product]["price_spread"][0] # changed by QW
-                trader_data[product]["sell_price"] = trader_data[product]["expected_mid_price"] + trader_data[product]["price_spread"][1] # changed by QW
-                trader_data[product]['excess_buy'] = [(trader_data[product]["buy_price"], 1.)]
-                trader_data[product]['excess_sell'] = [(trader_data[product]["sell_price"], 1.)]
-            
-        return trader_data
+            # Simple Average model to predict mid_price
+            elif data['price_method'] == 'average':
+                if len(data['mid_price_data']) == data['price_data_size']:
+                    data['expected_mid_price'] = sum(data['mid_price_data'])/len(data['mid_price_data'])
 
-    def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:        
+
+            elif data['price_method'] == 'average_with_trend':
+                pass
+
+
+
+    def computeTakeOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
+        orders = []
+        buy_orders, sell_orders = state.order_depths[product].buy_orders.items(), state.order_depths[product].sell_orders.items()
+        POS_LIMIT, position = data['POS_LIMIT'], state.position.get(product, 0)
+
+        buy_offset, sell_offset = self.getPriceSpread(data['current_position'], 
+                                                      data['take_position_stage'], 
+                                                      data['take_price_spread'])
+        
+        if data['expected_mid_price'] is None:
+            return orders
+        
+        acc_ask = data['expected_mid_price'] - buy_offset # price to buy, lower the better
+        acc_bid = data['expected_mid_price'] + sell_offset # price to sell, higher the better
+
+        for ask, ask_amount in sell_orders:
+            if (ask <= acc_ask) and (data['num_buy'] < POS_LIMIT - position):
+                buy_amount = min(-ask_amount, POS_LIMIT - position - data['num_buy'])
+                orders.append(Order(product, ask, buy_amount))
+                data['num_buy'] += buy_amount
+
+        for bid, bid_amount in buy_orders:
+            if (bid >= acc_bid) and (data['num_sell'] < POS_LIMIT + position):
+                sell_amount = min(bid_amount, POS_LIMIT + position - data['num_sell'])
+                orders.append(Order(product, bid, -sell_amount))
+                data['num_sell'] += sell_amount
+
+        data['current_position'] += data['num_buy'] - data['num_sell']
+
+        return orders
+    
+
+
+    def computeMakeOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
+        orders = []
+        best_bid = list(state.order_depths[product].buy_orders.items())[0][0]
+        best_ask = list(state.order_depths[product].sell_orders.items())[0][0]
+        undercut_bid, undercut_ask = best_bid + 1, best_ask - 1
+        
+        buy_offset, sell_offset = self.getPriceSpread(data['current_position'], 
+                                                      data['make_position_stage'], 
+                                                      data['make_price_spread'])
+        our_bid = min(best_bid + 1, data['expected_mid_price'] - buy_offset)
+        our_ask = max(best_ask - 1, data['expected_mid_price'] + sell_offset)
+
+        return orders
+    
+
+
+    def computeLocalSellTakeOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
+        orders = []
+        return orders
+    
+
+
+    def computeLocalSellMakeOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
+        orders = []
+        return orders
+    
+
+
+    def computeForeignBuyOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> int:
+        conversions = 0
+        return conversions
+    
+
+
+    def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]: 
+        
+        # Initialize returned variables
         result = {}
         conversions = 0
         
         # Initialize traderData in the first iteration
         if state.traderData == "":
-            trader_data_prev = TRADER_DATA
+            trader_data = TRADER_DATA
         else:
-            trader_data_prev = jsonpickle.decode(state.traderData)
+            trader_data = jsonpickle.decode(state.traderData)
 
-        # Update trader data with new information
-        trader_data =  self.updateTraderData(state, trader_data_prev)
+        # Update trader data with new information and apply pricing models
+        self.updateTraderData(state, trader_data)
 
-        for product in state.order_depths:
-            
-            order_depth = state.order_depths[product]
-            position = state.position.get(product, 0)
-            position_limit = trader_data[product]["position_limit"]
-            position_stage_1 = trader_data[product]["position_stage_1"]
-            position_stage_2 = trader_data[product]["position_stage_2"]
-
-            buy_power, sell_power = position_limit - position, position_limit + position
-            num_buy = num_sell = 0
-            buy_orders, sell_orders = defaultdict(int), defaultdict(int)
-
-            """
-            Market taker: Try to find profitable orders in the order depths
-            """
-
-            # Try to match all buy orders with sell orders if prices are above sell price
-            outstanding_buy_orders = list(order_depth.buy_orders.items())
-            if trader_data[product]["sell_price"] is not None:
-                i = 0
-                while sell_power > num_sell and i < len(outstanding_buy_orders) and \
-                         outstanding_buy_orders[i][0] >= trader_data[product]["sell_price"]:
-                                                          
-                    bid, bid_amount = outstanding_buy_orders[i]
-                    sell_amount = min(bid_amount, sell_power - num_sell)
-                    sell_orders[bid] += sell_amount
-                    num_sell += sell_amount
-                    outstanding_buy_orders[i] = bid, bid_amount - sell_amount
-                    i += 1
-            
-            # If position is still above stage 1, try to sell excess at above mid price
-            if trader_data[product]["expected_mid_price"] is not None:
-                i = 0
-                while (position - num_sell > position_stage_1) and i < len(outstanding_buy_orders) and \
-                         outstanding_buy_orders[i][0] >= trader_data[product]["expected_mid_price"]:
-                    
-                    bid, bid_amount = outstanding_buy_orders[i]
-                    sell_amount = min([bid_amount, position - num_sell - position_stage_1])
-                    if sell_amount > 0:                        
-                        sell_orders[bid] += sell_amount
-                        num_sell += sell_amount
-                        outstanding_buy_orders[i] = bid, bid_amount - sell_amount
-                    i += 1
-            
-            # Try to match all sell orders with buy orders if prices are below buy price
-            outstanding_sell_orders = list(order_depth.sell_orders.items())
-            if trader_data[product]["buy_price"] is not None:
-                i = 0
-                while buy_power > num_buy and i < len(outstanding_sell_orders) and \
-                         outstanding_sell_orders[i][0] <= trader_data[product]["buy_price"]:
-                    
-                    ask, ask_amount = outstanding_sell_orders[i]
-                    buy_amount = min(-ask_amount, buy_power - num_buy)
-                    buy_orders[ask] += buy_amount
-                    num_buy += buy_amount
-                    outstanding_sell_orders[i] = ask, ask_amount + buy_amount
-                    i += 1
-
-            # If position is still below - stage 1, try to buy excess at below mid price
-            if trader_data[product]["expected_mid_price"] is not None:
-                i = 0
-                while (position + num_buy < -position_stage_1) and i < len(outstanding_sell_orders) and \
-                         outstanding_sell_orders[i][0] <= trader_data[product]["expected_mid_price"]:
-                    
-                    ask, ask_amount = outstanding_sell_orders[i]
-                    buy_amount = min([-ask_amount, -position - num_buy - position_stage_1])
-                    if buy_amount > 0:
-                        buy_orders[ask] += buy_amount
-                        num_buy += buy_amount
-                        outstanding_sell_orders[i] = ask, ask_amount + buy_amount
-                    i += 1
-
-            """
-            Market maker: Place buy and sell orders at certain price levels
-            """
-
-            # If position is above stage 2 and no good order is found in market, try to sell excess at mid price
-            # If position is below - stage 2 and no good order is found in market, try to buy excess at mid price
-            if position > position_stage_2 and num_sell == 0 and trader_data[product]["expected_mid_price"] is not None:
-                sell_orders[trader_data[product]["expected_mid_price"]] += position - position_stage_2
-                num_sell += position - position_stage_2
-            elif position < -position_stage_2 and num_buy == 0 and trader_data[product]["expected_mid_price"] is not None:
-                buy_orders[trader_data[product]["expected_mid_price"]] += -position - position_stage_2
-                num_buy += -position - position_stage_2
-
-            if trader_data[product]["excess_buy"] is not None:
-                for buy_price, buy_fraction in trader_data[product]["excess_buy"]:
-                    buy_quantity = int(buy_fraction * (buy_power - num_buy))
-                    if buy_quantity > 0:
-                        buy_orders[buy_price] += buy_quantity
-                        num_buy += buy_quantity
-
-            if trader_data[product]["excess_sell"] is not None:
-                for sell_price, sell_fraction in trader_data[product]["excess_sell"]:
-                    sell_quantity = int(sell_fraction * (sell_power - num_sell))
-                    if sell_quantity > 0:
-                        sell_orders[sell_price] += sell_quantity
-                        num_sell += sell_quantity
-
-            """
-            Format buy_orders and sell_orders into Order objects
-            """
+        for product in trader_data:
             orders = []
-            for price, amount in sorted(list(buy_orders.items()), key=lambda x: x[0]):
-                orders.append(Order(product, price, amount))
-            for price, amount in sorted(list(sell_orders.items()), key=lambda x: -x[0]):
-                orders.append(Order(product, price, -amount))
+
+            for strategy in trader_data[product]["strategy"]:
+
+                if strategy == "market_take":
+                    orders += self.computeTakeOrders(product, state, trader_data[product])
+                    
+                elif strategy == "market_make":
+                    orders += self.computeMakeOrders(product, state, trader_data[product])
+                
+                elif strategy == "local_sell_take":
+                    orders += self.computeLocalSellTakeOrders(product, state, trader_data[product])
+
+                elif strategy == "local_sell_make":
+                    orders += self.computeLocalSellMakeOrders(product, state, trader_data[product])
+
+                elif strategy == "foreign_buy":
+                    conversions = self.computeForeignBuyOrders(product, state, trader_data[product])
 
             result[product] = orders
 
@@ -314,3 +306,4 @@ class Trader:
 
         logger.flush(state, result, conversions, trader_data)
         return result, conversions, trader_data
+    
