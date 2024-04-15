@@ -248,11 +248,11 @@ class Trader:
                 avaiableposition = 100 + cur_position
                 factor = 0
 
-                if  len(self.product_infor[product]['Humidity'])>0 and obser.sunlight < self.product_infor[product]['Humidity'][-1]:
+                #if  len(self.product_infor[product]['Humidity'])>0 and obser.sunlight < self.product_infor[product]['Humidity'][-1]:
 
-                    if  len(self.product_infor[product]['Humidity'])>0: #and obser.humidity < self.product_infor[product]['Humidity'][-1]: 
+                if  len(self.product_infor[product]['Humidity'])>0: #and obser.humidity < self.product_infor[product]['Humidity'][-1]: 
                    # orders.append(Order(product, round(acceptablesell_price+3), -round(avaiableposition*factor))) ##sell more
-                        orders.append(Order(product, round(acceptablesell_price+2), -(100-round(avaiableposition*factor) ))) ##sell more
+                    orders.append(Order(product, round(acceptablesell_price+2), -(100-round(avaiableposition*factor) ))) ##sell more
                 
                 if  len(self.product_infor[product]['Humidity'])>0 and obser.sunlight > self.product_infor[product]['Humidity'][-1]: ##humidity is increasing, price is increasing, price is decreasin
                     orders.append(Order(product, round(acceptablesell_price-2), (0-cur_position))) ##buy
