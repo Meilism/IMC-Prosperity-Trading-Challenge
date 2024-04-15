@@ -184,7 +184,7 @@ class Trader:
                 #tate.observations.conversionObservations['ORCHIDS']
 
                 if product not in self.product_infor:
-                    self.product_infor[product] ={'mean':[],'std':[],'mid':[],'spread':[], 'Humidity':[]}
+                    self.product_infor[product] ={'mid':[], 'Humidity':[]}
                 
                 if len(self.product_infor[product][pricetype]) < self.maxlookback:
                     acceptablebuy_price = 0
@@ -243,10 +243,19 @@ class Trader:
                         Sumpricesquare += (bid**2)*amount
                         totalnum += amount        
                 
-                ## sell 
-                if len(self.product_infor[product]['Humidity']) >0:
-                    orders.append(Order(product, round(acceptablesell_price+2), -(100+cur_position))) ##sell more   
-                    orders.append(Order(product, round(foreignprice), (0-cur_position))) ##buy
+                ## sell
+                cut = 50 
+                avaiableposition = 100 + cur_position
+                factor = 1
+
+                if  len(self.product_infor[product]['Humidity'])>0 and obser.sunlight < self.product_infor[product]['Humidity'][-1]:
+
+                    if  len(self.product_infor[product]['Humidity'])>0: #and obser.humidity < self.product_infor[product]['Humidity'][-1]: 
+                   # orders.append(Order(product, round(acceptablesell_price+3), -round(avaiableposition*factor))) ##sell more
+                        orders.append(Order(product, round(acceptablesell_price+2), -(100-round(avaiableposition*factor) ))) ##sell more
+                
+                if  len(self.product_infor[product]['Humidity'])>0 and obser.sunlight > self.product_infor[product]['Humidity'][-1]: ##humidity is increasing, price is increasing, price is decreasin
+                    orders.append(Order(product, round(acceptablesell_price-2), (0-cur_position))) ##buy
                
                 
 
@@ -255,7 +264,7 @@ class Trader:
                 Mid_price, Mid_spread = self.midprice_spread(Buy_Order, Sell_Order, weighted )
                 
 
-                self.product_infor[product]['Humidity'].append(obser.humidity)
+                self.product_infor[product]['Humidity'].append(obser.sunlight)
 
 
 
@@ -267,7 +276,7 @@ class Trader:
                     self.product_infor[product]['mid'].pop(0)
                 #    self.product_infor[product]['spread'].pop(0)
                 
-                if len(self.product_infor[product]['mid'])==self.maxlookback+1:
+                if len(self.product_infor[product]['Humidity'])==self.maxlookback+1:
                     self.product_infor[product]['Humidity'].pop(0)
 
             result[product] = orders
@@ -277,4 +286,3 @@ class Trader:
        
         logger.flush(state, result, conversions, traderData)
         return result, conversions, traderData
-
