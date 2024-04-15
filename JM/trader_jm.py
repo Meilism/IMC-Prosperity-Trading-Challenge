@@ -84,14 +84,27 @@ TRADER_DATA = {
         # 'humidity_data': [],
         # 'sunlight_data': [],
 
-        'price_method': 'average_foreign',
+        # 'price_method': 'polyfit_foreign',
+        # 'expected_mid_price': None,
+        # 'mid_price_data': [],
+        # 'foreign_price_data': [],
+        # 'humidity_data': [],
+        # 'sunlight_data': [],
+        # 'price_data_size': 30,
+        # 'polyfit_degree': 2,
+
+        'price_method': 'foreign',
         'expected_mid_price': None,
         'mid_price_data': [],
         'foreign_price_data': [],
-        'price_data_size': 8,
+        'humidity_data': [],
+        'sunlight_data': [],
+        'price_data_size': 1,
 
-        'strategy': ['cross_market'],
+        'strategy': ['cross_market_make'],
 
+        # 'strategy': ['cross_market'],
+        # 'spread': [5, 2],
     },
 }
 
@@ -262,12 +275,25 @@ class Trader:
             if len(data['mid_price_data']) == data['price_data_size']:
                 data['expected_mid_price'] = round(sum([data['mid_price_data'][i] * data['coef'][i] for i in range(data['price_data_size'])]) + data['intercept'])
         
+
+        # Use foreign market ask price as mid_price
+        elif data['price_method'] == 'foreign':
+            conversion_observations = state.observations.conversionObservations[product]
+            data['expected_mid_price'] = conversion_observations.askPrice + conversion_observations.importTariff + conversion_observations.transportFees
+
+
         # Average of foreign market price model to predict mid_price
         elif data['price_method'] == 'average_foreign':
             if len(data['foreign_price_data']) == data['price_data_size']:
                 data['expected_mid_price'] = self.calculateAverage(data['foreign_price_data'], None)
 
         
+        # Polynomial fit model to predict mid_price
+        elif data['price_method'] == 'polyfit_foreign':
+            if len(data['foreign_price_data']) == data['price_data_size']:
+                data['expected_mid_price'] = np.polyval(np.polyfit(range(data['price_data_size']), data['foreign_price_data'], data['polyfit_degree']), data['price_data_size'])
+
+
         # Multivariate trend model to predict mid_price
         elif data['price_method'] == 'multivar_trend':
             if len(data['mid_price_data']) == data['price_data_size']:
@@ -337,21 +363,78 @@ class Trader:
 
     def computeCrossMarket(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
 
-        def computeBuySell(expected_mid_price, ask, ask_amount, bid, bid_amount, ask_foreign):
+        def computeBuySell(expected_mid_price, s, ask, ask_amount, bid, bid_amount, ask_foreign, import_fee, POS_LIMIT, position) -> tuple[int, int, int]:
+            c1 = expected_mid_price - (ask_foreign + import_fee) - s[0]
+            c2 = expected_mid_price - ask - s[0]
+            c3 = bid - expected_mid_price - (s[1] + import_fee)
             
-            pass
+            logger.print(f"Expected mid price: {expected_mid_price}, Ask: ({ask}, {ask_amount}), Bid: ({bid},{bid_amount}), Ask foreign: {ask_foreign}, Import fee: {import_fee}, Position: {position}")
+            logger.print(f'c1: {c1}, c2: {c2}, c3: {c3}')
+
+            best = -float('inf')
+            for i in range(max(1, 1 - position)):
+                for j in range(min(POS_LIMIT - position, -ask_amount) + 1):
+                    for k in range(min(POS_LIMIT + position, bid_amount) + 1):
+                        if c1*i + c2*j + c3*k - 0.1*max(0, position + i + j - k) > best:
+                            best = c1*i + c2*j + c3*k - 0.1*max(0, position + i + j - k)
+                            conversions = i
+                            buy_amount = j
+                            sell_amount = k
+
+            logger.print(f"Conversions: {conversions}, Buy: {buy_amount}, Sell: {sell_amount}, Best: {best}")
+            return conversions, buy_amount, sell_amount
+        
+        if data['expected_mid_price'] is None:
+            return [], 0
 
         orders = []
 
         observations = state.observations.conversionObservations[product]
+        ask_foreign = observations.askPrice
+        import_fee = observations.importTariff + observations.transportFees
+
         bid, bid_amount = list(state.order_depths[product].buy_orders.items())[0]     
         ask, ask_amount = list(state.order_depths[product].sell_orders.items())[0]
-        ask_foreign = observations.askPrice + observations.transportFees + observations.importTariff
 
+        POS_LIMIT, position = data['POS_LIMIT'], state.position.get(product, 0)
+        expected_mid_price = data['expected_mid_price']
 
-        return orders
+        conversions, buy_amount, sell_amount = computeBuySell(expected_mid_price, data['spread'], ask, ask_amount, bid, bid_amount, ask_foreign, import_fee, POS_LIMIT, position)
+        
+        if buy_amount > 0:
+            orders.append(Order(product, ask, buy_amount))
+            data['num_buy'] += buy_amount
+        if sell_amount > 0:
+            orders.append(Order(product, bid, -sell_amount))
+            data['num_sell'] += sell_amount
+        if position + conversions + buy_amount - sell_amount > -POS_LIMIT:
+            sell_amount = position + conversions + buy_amount - sell_amount + POS_LIMIT
+            orders.append(Order(product, expected_mid_price + 2, -sell_amount))
+
+        return orders, conversions
     
 
+
+    def computeCrossMarketMake(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
+        if data['expected_mid_price'] is None:
+            return [], 0
+
+        orders = []
+
+        bid, bid_amount = list(state.order_depths[product].buy_orders.items())[0]
+        POS_LIMIT, position = data['POS_LIMIT'], state.position.get(product, 0)
+
+        conversions = max(0, -position)
+
+        if bid > data['expected_mid_price']:
+            sell_amount = min(POS_LIMIT + position, bid_amount)
+            orders.append(Order(product, bid, -sell_amount))
+            data['num_sell'] += sell_amount
+
+        sell_amount = POS_LIMIT + position - data['num_sell']
+        orders.append(Order(product, round(data['expected_mid_price'] + 2), -sell_amount))
+
+        return orders, conversions
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]: 
         
@@ -380,7 +463,10 @@ class Trader:
                     orders += self.computeMakeOrders(product, state, trader_data[product])
                 
                 elif strategy == "cross_market":
-                    pass                
+                    orders, conversions = self.computeCrossMarket(product, state, trader_data[product])
+
+                elif strategy == "cross_market_make":
+                    orders, conversions = self.computeCrossMarketMake(product, state, trader_data[product])             
 
             result[product] = orders
 
