@@ -5,8 +5,12 @@ import numpy as np
 
 PRODUCTS = [
     "AMETHYSTS",
-    "STARFRUIT",
+    "STARFRUIT",    
     "ORCHIDS",
+    'STRAWBERRIES',
+    'CHOCOLATE',
+    'ROSES',
+    'GIFT_BASKETS',
 ]
 
 TRADER_DATA = {
@@ -106,6 +110,30 @@ TRADER_DATA = {
 
         # 'strategy': ['cross_market'],
         # 'spread': [5, 2],
+    },
+
+    'CHOCOLATE': {
+        'POS_LIMIT': 250,
+        'num_buy': 0,
+        'num_sell': 0,
+    },
+
+    'STRAWBERRIES': {
+        'POS_LIMIT': 350,
+        'num_buy': 0,
+        'num_sell': 0,
+    },
+
+    'ROSES': {
+        'POS_LIMIT': 60,
+        'num_buy': 0,
+        'num_sell': 0,
+    },
+
+    'GIFT_BASKETS': {
+        'POS_LIMIT': 60,
+        'num_buy': 0,
+        'num_sell': 0,
     },
 }
 
@@ -471,7 +499,7 @@ class Trader:
                     orders, conversions = self.computeCrossMarket(product, state, trader_data[product])
 
                 elif strategy == "cross_market_make":
-                    orders, conversions = self.computeCrossMarketMake(product, state, trader_data[product])             
+                    orders, conversions = self.computeCrossMarketMake(product, state, trader_data[product])
 
             result[product] = orders
 
