@@ -11,9 +11,9 @@ tableau_colors = [
     (255, 127, 14),  # Orange 1
     (44, 160, 44),   # Green 2
     (214, 39, 40),   # Red 3, red detuning
-    (148, 103, 189), # Purple 4, excited state (black being ground state)
+    (148, 103, 189), # Purple 4, excited state (black being ground state), bid-ask spread
     (140, 86, 75),   # Brown 5
-    (227, 119, 194), # Pink 6, loadlock
+    (227, 119, 194), # Pink 6, loadlock, volatility
     (127, 127, 127), # Gray 7
     (188, 189, 34),  # Yellow 8
     (23, 190, 207),  # Cyan 9 
