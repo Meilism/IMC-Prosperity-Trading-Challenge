@@ -4,10 +4,9 @@ from typing import Any, List, Dict
 import numpy as np
 
 PRODUCTS = [
-    "AMETHYSTS",
-    "STARFRUIT",    
+    # "AMETHYSTS",
+    # "STARFRUIT",    
     "ORCHIDS",
-    # "BASKET",
 ]
 
 TRADER_DATA = {
@@ -93,31 +92,10 @@ TRADER_DATA = {
         'price_data_size': 1,
 
         'strategy': ['cross_market_make'],
-        'make_price_offset': 1,
+        'make_spread': -4,
 
         # 'strategy': ['cross_market'],
         # 'spread': [5, 2],
-    },
-
-    'BASKET': {
-        'BASKET': 'GIFT_BASKETS',
-        'PRODUCT': ['CHOCOLATE', 'STRAWBERRIES', 'ROSES'],
-        'BASKET_LIMIT': 60,
-        'PRODUCT_LIMIT': {
-            'CHOCOLATE': 250,
-            'STRAWBERRIES': 350,
-            'ROSES': 60,
-        },
-        'num_buy': {
-            'CHOCOLATE': 0,
-            'STRAWBERRIES': 0,
-            'ROSES': 0,
-        },
-        'num_sell': {
-            'CHOCOLATE': 0,
-            'STRAWBERRIES': 0,
-            'ROSES': 0,
-        },
     },
 }
 
@@ -427,29 +405,21 @@ class Trader:
     def computeCrossMarketMake(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
         if data['expected_mid_price'] is None:
             return [], 0
-        
-        POS_LIMIT, position = data['POS_LIMIT'], state.position.get(product, 0)
-        conversions = max(0, -position)
-        # After conversion, position is 0
-        
+
         orders = []
-        observations = state.observations.conversionObservations[product]
-        ask_price = observations.askPrice + observations.importTariff + observations.transportFees
 
         bid, bid_amount = list(state.order_depths[product].buy_orders.items())[0]
+        POS_LIMIT, position = data['POS_LIMIT'], state.position.get(product, 0)
 
-        sell_price = int(max(round(ask_price + data['make_price_offset']), \
-                             round(data['expected_mid_price'] - 2)))
-        
-        # Market taker
-        if bid > ask_price:
-            sell_amount = min(POS_LIMIT, bid_amount)
-            orders.append(Order(product, bid, -sell_amount))
-            data['num_sell'] += sell_amount
+        conversions = max(0, -position) # Convert all existing positions
 
-        # Market maker
-        sell_amount = POS_LIMIT - data['num_sell']
-        orders.append(Order(product, sell_price, -sell_amount))
+        # if bid > data['expected_mid_price']:
+        #     sell_amount = min(POS_LIMIT + position, bid_amount)
+        #     orders.append(Order(product, bid, -sell_amount))
+        #     data['num_sell'] += sell_amount
+
+        sell_amount = POS_LIMIT # + position - data['num_sell']
+        orders.append(Order(product, int(round(data['expected_mid_price'] + data['make_spread'])), -sell_amount))
 
         return orders, conversions
 
