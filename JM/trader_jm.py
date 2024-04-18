@@ -7,7 +7,7 @@ PRODUCTS = [
     "AMETHYSTS",
     "STARFRUIT",    
     "ORCHIDS",
-    # "BASKET",
+    "GIFT_BASKET",
 ]
 
 TRADER_DATA = {
@@ -26,7 +26,7 @@ TRADER_DATA = {
         'take_price_spread': [(2, 2), (2, 0)],
 
         'make_position_stage': [0, 15, 20],
-        'make_price_spread': [(2, 2), (2, 1), (2, 0)],
+        'make_price_spread': [(1, 1), (1, 2), (0, 2)],
         'make_price_offset': [1, 1],
 
     },
@@ -93,32 +93,34 @@ TRADER_DATA = {
         'price_data_size': 1,
 
         'strategy': ['cross_market_make'],
-        'make_price_offset': 1,
+        'make_price_offset': [1, -2],
 
         # 'strategy': ['cross_market'],
         # 'spread': [5, 2],
     },
 
-    'BASKET': {
-        'BASKET': 'GIFT_BASKETS',
-        'PRODUCT': ['CHOCOLATE', 'STRAWBERRIES', 'ROSES'],
-        'BASKET_LIMIT': 60,
-        'PRODUCT_LIMIT': {
-            'CHOCOLATE': 250,
-            'STRAWBERRIES': 350,
-            'ROSES': 60,
-        },
-        'num_buy': {
-            'CHOCOLATE': 0,
-            'STRAWBERRIES': 0,
-            'ROSES': 0,
-        },
-        'num_sell': {
-            'CHOCOLATE': 0,
-            'STRAWBERRIES': 0,
-            'ROSES': 0,
-        },
-    },
+    'GIFT_BASKET':{
+        
+        'PRODUCT': {'CHOCOLATE': 4, 'STRAWBERRIES': 6, 'ROSES': 1},
+        'PROD_POS_LIMIT': {'CHOCOLATE': 250, 'STRAWBERRIES': 350, 'ROSES': 60},
+
+        'POS_LIMIT': 60,
+        'num_buy': 0,
+        'num_sell': 0,
+        'sell_limit': 6,
+        'buy_limit': 6,
+
+        'price_method': 'average',
+        'expected_mid_price': None,
+        'mid_price_data': [],
+        'price_data_size': 1,
+
+        'strategy': ['pair_trading'],
+        'res_offset': 379.5,
+        'trade_offset': 40,
+        'make_price_offset': [2, 2],
+
+    }
 }
 
 class Logger:
@@ -438,8 +440,8 @@ class Trader:
 
         bid, bid_amount = list(state.order_depths[product].buy_orders.items())[0]
 
-        sell_price = int(max(round(ask_price + data['make_price_offset']), \
-                             round(data['expected_mid_price'] - 2)))
+        sell_price = int(max(round(ask_price + data['make_price_offset'][0]), \
+                             round(data['expected_mid_price'] + data['make_price_offset'][1])))
         
         # Market taker
         if bid > ask_price:
@@ -455,8 +457,85 @@ class Trader:
 
 
 
-    def computeBasketOrders(self, state: TradingState, data: Dict[str, Any]) -> dict[Symbol, list[Order]]:
-        pass
+    def computePairTrading(self, state: TradingState, data: Dict[str, Any]) -> dict[Symbol, list[Order]]:
+        orders = {p: [] for p in data['PRODUCT']}
+        orders['GIFT_BASKET'] = []
+
+        POS_LIMIT, position = data['POS_LIMIT'], state.position.get('GIFT_BASKET', 0)
+
+        # Pair trading
+        for p in data['PRODUCT']:
+            prod_position = state.position.get(p, 0)
+            prod_pos_limit = data['PROD_POS_LIMIT'][p]
+            pos_diff  = prod_position + position * data['PRODUCT'][p]
+
+            if pos_diff > 0: # We want to sell the individual products
+                sell_amount = min(pos_diff, prod_pos_limit + prod_position)
+                buy_orders = state.order_depths[p].buy_orders.items()
+                for bid, bid_amount in buy_orders:
+                    if sell_amount == 0:
+                        break
+                    sell_vol = min(sell_amount, bid_amount)
+                    orders[p].append(Order(p, bid, -sell_vol))
+                    sell_amount -= sell_vol
+
+            elif pos_diff < 0: # We want to buy the individual products
+                buy_amount = min(abs(pos_diff), prod_pos_limit - prod_position)
+                sell_orders = state.order_depths[p].sell_orders.items()
+                for ask, ask_amount in sell_orders:
+                    if buy_amount == 0:
+                        break
+                    buy_vol = min(buy_amount, -ask_amount)
+                    orders[p].append(Order(p, ask, buy_vol))
+                    buy_amount -= buy_vol
+
+        data['previous_position'] = position
+
+        # Pair trading for the GIFT_BASKET
+        best_bid, best_ask = self.getBestBidAsk(state, 'GIFT_BASKET')
+        mid_price = (best_bid + best_ask) / 2
+
+        res = data['res_offset']
+        for p in data['PRODUCT']:
+            bid, ask = self.getBestBidAsk(state, p)
+            res += data['PRODUCT'][p] * (bid + ask) / 2
+        
+        if mid_price - res > data['trade_offset']:
+
+            # Good to sell GIFT_BASKET
+            buy_orders = state.order_depths['GIFT_BASKET'].buy_orders.items()
+            sell_limit = data['sell_limit']
+
+            for bid, bid_amount in buy_orders:
+                if data['num_sell'] == POS_LIMIT + position or data['num_sell'] == sell_limit:
+                    break
+                sell_vol = min([bid_amount, POS_LIMIT + position - data['num_sell'], sell_limit - data['num_sell']])
+                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', bid, -sell_vol))
+                data['num_sell'] += sell_vol
+
+            if position - data['num_sell'] > -POS_LIMIT and data['num_sell'] < sell_limit:
+                sell_vol = min(position - data['num_sell'] + POS_LIMIT, sell_limit - data['num_sell'])
+                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', round(mid_price + data['make_price_offset'][1]), -sell_vol))
+
+        elif mid_price - res < -data['trade_offset']:
+
+            # Good to buy GIFT_BASKET
+            sell_orders = state.order_depths['GIFT_BASKET'].sell_orders.items()
+            buy_limit = data['buy_limit']
+
+            for ask, ask_amount in sell_orders:
+                if data['num_buy'] == POS_LIMIT - position or data['num_buy'] == buy_limit:
+                    break
+                buy_vol = min([-ask_amount, POS_LIMIT - position - data['num_buy'], buy_limit - data['num_buy']])
+                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', ask, buy_vol))
+                data['num_buy'] += buy_vol
+
+            if position + data['num_buy'] < POS_LIMIT and data['num_buy'] < buy_limit:
+                buy_vol = min(POS_LIMIT - position - data['num_buy'], buy_limit - data['num_buy'])
+                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', round(mid_price - data['make_price_offset'][0]), buy_vol))
+
+
+        return orders
 
 
 
@@ -474,10 +553,10 @@ class Trader:
 
         for product in PRODUCTS:
 
-            if product != 'BASKET':
+            # Update data with new information from market
+            self.updateData(state, product, trader_data[product])
 
-                # Update data with new information from market
-                self.updateData(state, product, trader_data[product])
+            if product != 'GIFT_BASKET':
 
                 orders = []
                 for strategy in trader_data[product]["strategy"]:
@@ -497,7 +576,12 @@ class Trader:
                 result[product] = orders
             
             else:
-                orders = self.computeBasketOrders(state, trader_data[product])
+
+                if trader_data[product]['strategy'] == ['pair_trading']:    
+                    orders = self.computePairTrading(state, trader_data[product])
+                else:
+                    pass
+
                 for p in orders:
                     result[p] = orders[p]
 
