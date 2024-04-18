@@ -3,6 +3,13 @@ from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder
 from typing import Any, List, Dict
 from collections import OrderedDict
 
+PRODUCTS = [
+    "AMETHYSTS",
+    "STARFRUIT",    
+    "ORCHIDS",
+    "BASKET",
+]
+
 TRADER_DATA = {
     'AMETHYSTS': {
         'POSITION_LIMIT': 20,
@@ -38,7 +45,7 @@ TRADER_DATA = {
         'PRODUCT': ['CHOCOLATE', 'STRAWBERRIES', 'ROSES', 'GIFT_BASKET'],
         'STD': 76.4, 
         'MEAN': 379.5,
-        'PRODUCT_LIMIT': {
+        'POSITION_LIMIT': {
             'CHOCOLATE': 250,
             'STRAWBERRIES': 350,
             'ROSES': 60,
@@ -268,6 +275,8 @@ class Trader:
                     state.order_depths[product].buy_orders.items(), reverse=True))
             other_ask_orders[product] = OrderedDict(sorted(
                     state.order_depths[product].sell_orders.items()))
+            
+            cur_position = state.position.get(product, 0)
 
             # best bids from others 
             hi_other_bid[product] = next(iter(other_bid_orders[product].values()))
@@ -298,25 +307,26 @@ class Trader:
 
         trade_at = prod_data['STD'] * 0.5
 
-        # these variables might be useful - positive and negative positions
-        cur_position = state.position.get('GIFT_BASKET', 0)
 
         # good to sell
         if diff_price > trade_at:
             # how much we can sell maximally
-            qty = prod_data['POSITION_LIMIT']['GIFT_BASKET'] + cur_position
-            assert qty >= 0
-            if qty > 0:
+            ask_quantity = prod_data['POSITION_LIMIT']['GIFT_BASKET'] + cur_position
+            assert ask_quantity >= 0
+            if ask_quantity > 0:
                 # sell it to the worst bid from others' perspective, best bid for us
                 orders['GIFT_BASKET'].append(Order('GIFT_BASKET', 
-                                                   lo_other_bid['GIFT_BASKET'], -qty)) 
+                                                   lo_other_bid['GIFT_BASKET'], -ask_quantity)) 
+                prod_data['NUM_ASK']['GIFT_BASKET'] += ask_quantity
+                
 
         elif diff_price < -trade_at:
-            qty = prod_data['POSITION_LIMIT']['GIFT_BASKET'] - cur_position
-            assert qty >= 0
-            if qty > 0:
+            bid_quantity = prod_data['POSITION_LIMIT']['GIFT_BASKET'] - cur_position
+            assert bid_quantity >= 0
+            if bid_quantity > 0:
                 orders['GIFT_BASKET'].append(Order('GIFT_BASKET', 
-                                                    hi_other_ask['GIFT_BASKET'], qty))
+                                                    hi_other_ask['GIFT_BASKET'], bid_quantity))
+                prod_data['NUM_BID']['GIFT_BASKET'] += bid_quantity
 
         return orders
 
@@ -336,7 +346,9 @@ class Trader:
 
         # self.update_trader_data(state, trader_data)
 
-        for product in state.listings:
+        for product in PRODUCTS:
+            # self.update_trader_data(state, product, trader_data[product])
+
             orders = []
 
             # if product == 'AMETHYSTS':
