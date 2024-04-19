@@ -5,60 +5,12 @@ import numpy as np
 
 PRODUCTS = [
     # "AMETHYSTS",
-    # "STARFRUIT",  
+    # "STARFRUIT",
     # "ORCHIDS",
     "GIFT_BASKET",
 ]
 
-TRADER_DATA = {    
-    'GIFT_BASKET':{        
-        'PRODUCT': {'CHOCOLATE': 4, 'STRAWBERRIES': 6, 'ROSES': 1},
-        'PROD_POS_LIMIT': {'CHOCOLATE': 250, 'STRAWBERRIES': 350, 'ROSES': 60},
-        'POS_LIMIT': 60,
-        'num_buy': 0,
-        'num_sell': 0,
-        'sell_limit': 6,
-        'buy_limit': 6,
-
-        'price_method': 'average',
-        'expected_mid_price': None,
-        'mid_price_data': [],
-        'price_data_size': 1,
-
-        # 'strategy': ['pair_trading', 'momentum'],
-        'strategy': ['pair_trading', 'threshold'],
-        'res_offset': 379.5,
-        'trade_offset': 40,
-        'place_make_order': False,
-        'make_price_offset': [10, 10],
-    },
-
-    'ORCHIDS': {
-        'POS_LIMIT': 100,
-        'num_buy': 0,
-        'num_sell': 0,
-
-        # 'price_method': 'polyfit_foreign',
-        # 'expected_mid_price': None,
-        # 'mid_price_data': [],
-        # 'foreign_price_data': [],
-        # 'humidity_data': [],
-        # 'sunlight_data': [],
-        # 'price_data_size': 30,
-        # 'polyfit_degree': 2,
-
-        'price_method': 'foreign',
-        'expected_mid_price': None,
-        'mid_price_data': [],
-        'foreign_price_data': [],
-        'humidity_data': [],
-        'sunlight_data': [],
-        'price_data_size': 1,
-
-        'strategy': ['cross_market_make'],
-        'make_price_offset': [1, -2],
-    },
-
+TRADER_DATA = {
     'AMETHYSTS': {
         'POS_LIMIT': 20,
         'num_buy': 0,
@@ -102,10 +54,65 @@ TRADER_DATA = {
 
         'take_position_stage': [0, 20],
         'take_price_spread': [(1, 1), (1, 0)],
+
         'make_position_stage': [20],
         'make_price_spread': [(1, 1)],
         'make_price_offset': [1, 1],
+
     },
+
+    'ORCHIDS': {
+
+        'POS_LIMIT': 100,
+        'num_buy': 0,
+        'num_sell': 0,
+
+        # 'price_method': 'polyfit_foreign',
+        # 'expected_mid_price': None,
+        # 'mid_price_data': [],
+        # 'foreign_price_data': [],
+        # 'humidity_data': [],
+        # 'sunlight_data': [],
+        # 'price_data_size': 30,
+        # 'polyfit_degree': 2,
+
+        'price_method': 'foreign',
+        'expected_mid_price': None,
+        'mid_price_data': [],
+        'foreign_price_data': [],
+        'humidity_data': [],
+        'sunlight_data': [],
+        'price_data_size': 1,
+
+        'strategy': ['cross_market_make'],
+        'make_price_offset': [1, -2],
+
+        # 'strategy': ['cross_market'],
+        # 'spread': [5, 2],
+    },
+
+    'GIFT_BASKET':{
+        
+        'PRODUCT': {'CHOCOLATE': 4, 'STRAWBERRIES': 6, 'ROSES': 1},
+        'PROD_POS_LIMIT': {'CHOCOLATE': 250, 'STRAWBERRIES': 350, 'ROSES': 60},
+
+        'POS_LIMIT': 60,
+        'num_buy': 0,
+        'num_sell': 0,
+        'sell_limit': 6,
+        'buy_limit': 6,
+
+        'price_method': 'average',
+        'expected_mid_price': None,
+        'mid_price_data': [],
+        'price_data_size': 1,
+
+        'strategy': ['pair_trading', 'momentum'],
+        'res_offset': 379.5,
+        'trade_offset': 40,
+        'make_price_offset': [5, 5],
+
+    }
 }
 
 class Logger:
@@ -355,6 +362,62 @@ class Trader:
     
 
 
+    def computeCrossMarket(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
+
+        def computeBuySell(expected_mid_price, s, ask, ask_amount, bid, bid_amount, ask_foreign, import_fee, POS_LIMIT, position) -> tuple[int, int, int]:
+            c1 = expected_mid_price - (ask_foreign + import_fee) - s[0]
+            c2 = expected_mid_price - ask - s[0]
+            c3 = bid - expected_mid_price - (s[1] + import_fee)
+            
+            logger.print(f"Expected mid price: {expected_mid_price}, Ask: ({ask}, {ask_amount}), Bid: ({bid},{bid_amount}), Ask foreign: {ask_foreign}, Import fee: {import_fee}, Position: {position}")
+            logger.print(f'c1: {c1}, c2: {c2}, c3: {c3}')
+
+            best = -float('inf')
+            for i in range(max(1, 1 - position)):
+                for j in range(min(POS_LIMIT - position, -ask_amount) + 1):
+                    for k in range(min(POS_LIMIT + position, bid_amount) + 1):
+                        if c1*i + c2*j + c3*k - 0.1*max(0, position + i + j - k) > best:
+                            best = c1*i + c2*j + c3*k - 0.1*max(0, position + i + j - k)
+                            conversions = i
+                            buy_amount = j
+                            sell_amount = k
+
+            logger.print(f"Conversions: {conversions}, Buy: {buy_amount}, Sell: {sell_amount}, Best: {best}")
+            return conversions, buy_amount, sell_amount
+        
+        if data['expected_mid_price'] is None:
+            return [], 0
+
+        orders = []
+
+        observations = state.observations.conversionObservations[product]
+        ask_foreign = observations.askPrice
+        import_fee = observations.importTariff + observations.transportFees
+
+        bid, bid_amount = list(state.order_depths[product].buy_orders.items())[0]     
+        ask, ask_amount = list(state.order_depths[product].sell_orders.items())[0]
+
+        POS_LIMIT, position = data['POS_LIMIT'], state.position.get(product, 0)
+        expected_mid_price = data['expected_mid_price']
+
+        conversions, buy_amount, sell_amount = computeBuySell(expected_mid_price, data['spread'], ask, ask_amount, bid, bid_amount, ask_foreign, import_fee, POS_LIMIT, position)
+        
+        if buy_amount > 0:
+            orders.append(Order(product, ask, buy_amount))
+            data['num_buy'] += buy_amount
+        if sell_amount > 0:
+            orders.append(Order(product, bid, -sell_amount))
+            data['num_sell'] += sell_amount
+
+        # Market make
+        if position + conversions + buy_amount - sell_amount > -POS_LIMIT:
+            sell_amount = position + conversions + data['num_buy'] - data['num_sell'] + POS_LIMIT
+            orders.append(Order(product, round(expected_mid_price + 2), -sell_amount))
+
+        return orders, conversions
+    
+
+
     def computeCrossMarketMake(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
         if data['expected_mid_price'] is None:
             return [], 0
@@ -386,16 +449,17 @@ class Trader:
 
 
 
-    def computePairTrading(self, orders: Dict[Symbol, List[Order]], state: TradingState, data: Dict[str, Any]) -> None:
-        # Get the current position of GIFT_BASKET
-        position = state.position.get('GIFT_BASKET', 0)
+    def computePairTrading(self, state: TradingState, data: Dict[str, Any]) -> dict[Symbol, list[Order]]:
+        orders = {p: [] for p in data['PRODUCT']}
+        orders['GIFT_BASKET'] = []
 
-        # Pair trading with individual products to hedge the GIFT_BASKET
+        POS_LIMIT, position = data['POS_LIMIT'], state.position.get('GIFT_BASKET', 0)
+
+        # Pair trading
         for p in data['PRODUCT']:
-            prod_position, prod_pos_limit = state.position.get(p, 0), data['PROD_POS_LIMIT'][p]
+            prod_position = state.position.get(p, 0)
+            prod_pos_limit = data['PROD_POS_LIMIT'][p]
             pos_diff  = prod_position + position * data['PRODUCT'][p]
-            
-            logger.print(f"Position difference for {p}: {pos_diff}")
 
             if pos_diff > 0: # We want to sell the individual products
                 sell_amount = min(pos_diff, prod_pos_limit + prod_position)
@@ -408,7 +472,7 @@ class Trader:
                     sell_amount -= sell_vol
 
             elif pos_diff < 0: # We want to buy the individual products
-                buy_amount = min(-pos_diff, prod_pos_limit - prod_position)
+                buy_amount = min(abs(pos_diff), prod_pos_limit - prod_position)
                 sell_orders = state.order_depths[p].sell_orders.items()
                 for ask, ask_amount in sell_orders:
                     if buy_amount == 0:
@@ -417,56 +481,16 @@ class Trader:
                     orders[p].append(Order(p, ask, buy_vol))
                     buy_amount -= buy_vol
 
-
-
-    def computeThresholdOrders(self, orders: dict[Symbol, list[Order]], state: TradingState, data: Dict[str, Any]) -> None:
-        POS_LIMIT, position = data['POS_LIMIT'], state.position.get('GIFT_BASKET', 0)
+        # Pair trading for the GIFT_BASKET
         best_bid, best_ask = self.getBestBidAsk(state, 'GIFT_BASKET')
         mid_price = (best_bid + best_ask) / 2
 
-        res = data['res_offset']
-        for p in data['PRODUCT']:
-            bid, ask = self.getBestBidAsk(state, p)
-            res += data['PRODUCT'][p] * (bid + ask) / 2
-        
-        if mid_price - res > data['trade_offset']:
+        orders['GIFT_BASKET'] = []
+        orders['GIFT_BASKET'].append(Order('GIFT_BASKET', round(mid_price + 5), -(position + POS_LIMIT)))
+        orders['GIFT_BASKET'].append(Order('GIFT_BASKET', round(mid_price - 5), POS_LIMIT - position))
 
-            # Good to sell GIFT_BASKET
-            buy_orders = state.order_depths['GIFT_BASKET'].buy_orders.items()
-            sell_limit = data['sell_limit']
+        return orders
 
-            for bid, bid_amount in buy_orders:
-                if data['num_sell'] == min(POS_LIMIT + position, sell_limit):
-                    break
-                sell_vol = min([bid_amount, POS_LIMIT + position - data['num_sell'], sell_limit - data['num_sell']])
-                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', bid, -sell_vol))
-                data['num_sell'] += sell_vol
-
-            if data['num_sell'] < min(POS_LIMIT + position, sell_limit) and data['place_make_order']:
-                sell_vol = min(position + POS_LIMIT, sell_limit) - data['num_sell']
-                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', round(mid_price + data['make_price_offset'][1]), -sell_vol))
-
-        elif mid_price - res < -data['trade_offset']:
-
-            # Good to buy GIFT_BASKET
-            sell_orders = state.order_depths['GIFT_BASKET'].sell_orders.items()
-            buy_limit = data['buy_limit']
-
-            for ask, ask_amount in sell_orders:
-                if data['num_buy'] == min(POS_LIMIT - position, buy_limit):
-                    break
-                buy_vol = min([-ask_amount, POS_LIMIT - position - data['num_buy'], buy_limit - data['num_buy']])
-                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', ask, buy_vol))
-                data['num_buy'] += buy_vol
-
-            if data['num_buy'] < min(POS_LIMIT - position, buy_limit) and data['place_make_order']:
-                buy_vol = min(POS_LIMIT - position , buy_limit) - data['num_buy']
-                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', round(mid_price - data['make_price_offset'][0]), buy_vol))
-
-
-
-    def computeMomentum(self, orders: dict[Symbol, list[Order]], state: TradingState, data: Dict[str, Any]) -> None:
-        pass
 
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]: 
@@ -476,7 +500,10 @@ class Trader:
         conversions = 0
         
         # Initialize traderData in the first iteration
-        trader_data = TRADER_DATA if state.traderData == "" else jsonpickle.decode(state.traderData)
+        if state.traderData == "":
+            trader_data = TRADER_DATA
+        else:
+            trader_data = jsonpickle.decode(state.traderData)
 
         for product in PRODUCTS:
 
@@ -484,27 +511,33 @@ class Trader:
             self.updateData(state, product, trader_data[product])
 
             if product != 'GIFT_BASKET':
+
                 orders = []
                 for strategy in trader_data[product]["strategy"]:
+
                     if strategy == "market_take":
-                        orders += self.computeTakeOrders(product, state, trader_data[product])                        
+                        orders += self.computeTakeOrders(product, state, trader_data[product])
+                        
                     elif strategy == "market_make":
                         orders += self.computeMakeOrders(product, state, trader_data[product])
+                    
+                    elif strategy == "cross_market":
+                        orders, conversions = self.computeCrossMarket(product, state, trader_data[product])
+
                     elif strategy == "cross_market_make":
                         orders, conversions = self.computeCrossMarketMake(product, state, trader_data[product])
 
                 result[product] = orders
             
             else:
-                orders = {'GIFT_BASKET': [], 'CHOCOLATE': [], 'STRAWBERRIES': [], 'ROSES': []}
-                for strategy in trader_data[product]['strategy']:
-                    if strategy == 'threshold':
-                        self.computeThresholdOrders(orders, state, trader_data[product])
-                    elif strategy == 'momentum':
-                        self.computeMomentum(orders, state, trader_data[product])
-                    elif strategy == 'pair_trading':
-                        self.computePairTrading(orders, state, trader_data[product])
+                orders = {}
 
+                for strategy in trader_data[product]['strategy']:
+                    if strategy == 'momentum':
+                        orders = self.computePairTrading(state, trader_data[product])
+                    elif strategy == ['pair_trading']:    
+                        orders = self.computePairTrading(state, trader_data[product])
+                        
                 for p in orders:
                     result[p] = orders[p]
 
