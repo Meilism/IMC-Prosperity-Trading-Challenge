@@ -40,7 +40,7 @@ def load_log(log_file):
         trade_end = len(lines)
         trade_history = ''.join(lines[trade_start:trade_end])
 
-    activity_log = pd.read_csv(log_file, skiprows=activity_start, nrows=activity_end-activity_start-1, sep=';')
+    activity_log = pd.read_csv(log_file, skiprows=activity_start, nrows=activity_end-activity_start-1, sep=';').set_index(['product','day','timestamp'])
     trade_history = pd.read_json(trade_history)
     observation['ORCHIDS'] = (observation['ASK'] + observation['BID'])/2
 
