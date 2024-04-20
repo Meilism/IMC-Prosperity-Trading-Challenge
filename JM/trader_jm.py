@@ -2,6 +2,7 @@ import json, jsonpickle
 from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder, Symbol, Trade, TradingState
 from typing import Any, List, Dict
 import numpy as np
+import pandas as pd
 
 PRODUCTS = [
     # "AMETHYSTS",
@@ -20,10 +21,9 @@ TRADER_DATA = {
         'sell_limit': 6,
         'buy_limit': 6,
 
-        'price_method': 'average',
-        'expected_mid_price': None,
+        'price_method': None,
         'mid_price_data': [],
-        'price_data_size': 1,
+        'price_data_size': 100,
 
         # 'strategy': ['pair_trading', 'momentum'],
         'strategy': ['pair_trading', 'threshold'],
@@ -244,6 +244,8 @@ class Trader:
                 data['humidity_data'].pop(0)
                 data['sunlight_data'].pop(0)            
                 data['foreign_price_data'].pop(0)
+        
+        # Update basket data
 
 
 
@@ -483,7 +485,7 @@ class Trader:
             # Update data with new information from market
             self.updateData(state, product, trader_data[product])
 
-            if product != 'GIFT_BASKET':
+            if product != 'GIFT_BASKET': # List of orders for single product
                 orders = []
                 for strategy in trader_data[product]["strategy"]:
                     if strategy == "market_take":
@@ -495,7 +497,7 @@ class Trader:
 
                 result[product] = orders
             
-            else:
+            else: # Dict of list of orders for all basket products
                 orders = {'GIFT_BASKET': [], 'CHOCOLATE': [], 'STRAWBERRIES': [], 'ROSES': []}
                 for strategy in trader_data[product]['strategy']:
                     if strategy == 'threshold':
