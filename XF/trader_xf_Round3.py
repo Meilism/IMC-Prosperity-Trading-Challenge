@@ -113,7 +113,10 @@ class Trader:
             weight = np.exp(expparameter*rawweight ) ##exp(weight*para) if para ==0, then this is equal weighting moving average
         acceptable_price = sum(np.array(self.product_infor[product][cat]) * weight)/sum(weight)
         return acceptable_price
-    
+    def LinearRegression(self,product,cat):
+        x = np.linspace(1,len(self.product_infor[product][cat]), len(self.product_infor[product][cat]))
+        m,b = np.polyfit(x,self.product_infor[product][cat],1)
+        return  m, b
     
     def midprice_spread(self,  buyorder = [], sellorder = [],Weighted_mid =True):
         if len(buyorder) == 0 and len(sellorder) ==0:
@@ -150,18 +153,18 @@ class Trader:
           #  Logger.print( MIDPRICE['CHOCOLATE']*4+MIDPRICE['STRAWBERRIES']*6+MIDPRICE['ROSES']+379.49 - MIDPRICE['GIFT_BASKET']   )
 
         EST_MIDPRICE['GIFT_BASKET'] =   MIDPRICE['CHOCOLATE']*4+MIDPRICE['STRAWBERRIES']*6+MIDPRICE['ROSES']+379.49
-        EST_MIDPRICE['ROSES'] = MIDPRICE['GIFT_BASKET'] -  MIDPRICE['CHOCOLATE']*4+MIDPRICE['STRAWBERRIES']*6 - 379.49
-        EST_MIDPRICE['CHOCOLATE'] =  (MIDPRICE['GIFT_BASKET'] -  MIDPRICE['ROSES']+MIDPRICE['STRAWBERRIES']*6 - 379.49)/4
-        EST_MIDPRICE['STRAWBERRIES'] = (MIDPRICE['GIFT_BASKET'] -  MIDPRICE['CHOCOLATE']*4+MIDPRICE['ROSES'] - 379.49)/6
+        EST_MIDPRICE['ROSES'] = (MIDPRICE['GIFT_BASKET'] -  MIDPRICE['CHOCOLATE']*4-MIDPRICE['STRAWBERRIES']*6 - 379.49)
+        EST_MIDPRICE['CHOCOLATE'] =  (MIDPRICE['GIFT_BASKET'] -  MIDPRICE['ROSES']-MIDPRICE['STRAWBERRIES']*6 - 379.49)/4
+        EST_MIDPRICE['STRAWBERRIES'] = (MIDPRICE['GIFT_BASKET'] -  MIDPRICE['CHOCOLATE']*4-MIDPRICE['ROSES'] - 379.49)/6
         return EST_MIDPRICE
 
         ##76.42
     def run(self,state: TradingState):
         #print("traderData: " + state.traderData)
         #print("Observations: " + str(state.observations))
+        traderData = ""
+        POSITION_LIMIT = {'ROSES':60, 'STRAWBERRIES':350,'CHOCOLATE':250, 'GIFT_BASKET':60}
         
-        
-        position_limit = 60
 
         if state.traderData != "":
             self.product_infor = jsonpickle.decode(state.traderData)
@@ -169,29 +172,60 @@ class Trader:
     
       #  print("position:",state.position,'||||||')
    
-        
-        
+        EST_MIDPRICE = self.estimate_basket(state)
+        EST_MIDSTD = {'ROSES':76.42, 'STRAWBERRIES':76.42/6,'CHOCOLATE':76.42/4, 'GIFT_BASKET':76.42*0}
         for product in state.order_depths:
-
-
-
+            if product not in POSITION_LIMIT:
+                continue
+            if product not in self.product_infor:
+                    self.product_infor[product] ={'mean':[],'std':[],'mid':[],'spread':[],'buy':[],'sell':[]}
+            position_limit = POSITION_LIMIT[product]
 
             order_depth: OrderDepth = state.order_depths[product]
             orders: List[Order] = []
+            if product != 'GIFT_BASKET11':
+                acceptablebuy_price = EST_MIDPRICE[product]-EST_MIDSTD[product]
+                acceptablesell_price = EST_MIDPRICE[product]+EST_MIDSTD[product]
+                weighted = False
+                timeskip = 1
+            else:
+                pricetype = 'mean'  ##mid, mean
+                spreadtype = 'std' ##std, spread
+                prefactor1 = 0.8
+                prefactor2 = 0.8
+                weighted = False ##weighted mid
 
-            acceptablebuy_price = 0
-            acceptablesell_price = 100000000000 
-            Sell_Order = sorted(list(order_depth.sell_orders.items()), key=lambda x: x[0]  )
-            Buy_Order = sorted(list(order_depth.buy_orders.items()), key=lambda x: -x[0]  )
-            acceptablebuy_price = (Sell_Order[0][0] + Buy_Order[0][0])/2
-            acceptablesell_price = (Sell_Order[0][0] + Buy_Order[0][0])/2
-            logger.print(str(acceptablebuy_price),'--------')
-            EST_MIDPRICE = self.estimate_basket(state)
-            acceptablebuy_price = EST_MIDPRICE[product]
-            acceptablesell_price = EST_MIDPRICE[product]
-            logger.print(acceptablebuy_price,'++++++++')
-            #acceptablesell_price = acceptablebuy_price+20
-        
+                self.maxlookback = 2
+                timeskip = 1
+                MovingAverageType = 'Exp'  ##Linear, Exp
+                MovingParameters = 0 ## 0 for linear
+
+
+            
+                
+                if len(self.product_infor[product][pricetype]) < self.maxlookback:
+                    acceptablebuy_price = 0
+                    acceptablesell_price = 100000000
+                else:
+                    # acceptablebuy_price = self.movingaverage(MovingAverageType, product,pricetype,MovingParameters)
+                    # acceptablesell_price = acceptablebuy_price
+                    m,b = self.LinearRegression(product,pricetype)
+
+                    acceptablebuy_price = (len(self.product_infor[product][pricetype])+1)*m+b
+                    acceptablesell_price = acceptablebuy_price
+                    Sell_Order = sorted(list(order_depth.sell_orders.items()), key=lambda x: x[0]  )
+                    Buy_Order = sorted(list(order_depth.buy_orders.items()), key=lambda x: -x[0]  )
+                    if state.timestamp%timeskip ==0:
+                        if m>0:
+                            acceptablebuy_price = acceptablebuy_price
+                            acceptablesell_price = acceptablebuy_price+1
+                          #  self.product_infor[product]['buy'].append(acceptablebuy_price)
+                        else:
+                            acceptablesell_price = acceptablebuy_price
+                            acceptablebuy_price = acceptablebuy_price-1
+                            
+                         #   self.product_infor[product]['sell'].append(acceptablesell_price)
+   
            # acceptablebuy_price -= estimate_spread*prefactor
            # acceptablesell_price += estimate_spread*prefactor
 
@@ -199,55 +233,75 @@ class Trader:
             Sumpricesquare = 0
             totalnum = 0.000000000001 ##prevent (0/0)
             cur_position = state.position.get(product, 0)  
-            logger.print("Acceptable price : " + str(acceptablebuy_price))
-            
+          #  logger.print("Acceptable price : " + str(acceptablebuy_price))
+
         #   print("Buy Order depth : " + str(len(order_depth.buy_orders)) + ", Sell order depth : " + str(len(order_depth.sell_orders)))
-            Sell_Order, Buy_Order = [], []
-            if len(order_depth.sell_orders) != 0:    
-                Sell_Order = sorted(list(order_depth.sell_orders.items()), key=lambda x: x[0]  )
-            
-                for ask, amount in Sell_Order: ##amount is negative we want to buy
-                    if ask < acceptablebuy_price: ##buy
-                    #    print('kk')
-                        if cur_position < position_limit:
-                            buyamount = min(position_limit-cur_position,-amount)
-                            cur_position += buyamount
-                            logger.print("BUY", str(buyamount) + "x", ask)
-                            orders.append(Order(product, ask, buyamount)) 
-                    Sumprice += ask*(-amount)
-                    Sumpricesquare += (ask**2)*(-amount)
-                    totalnum += -amount
-                    
-            if len(order_depth.buy_orders) != 0: ##someone in market want to buy, we want to sell them      
-                Buy_Order = sorted(list(order_depth.buy_orders.items()), key=lambda x: -x[0]  )
-    
-                for bid, amount in Buy_Order: ##amount is postive number, we want to sell
-                    if bid > acceptablesell_price: ##sell
-                        if cur_position >-position_limit: 
-                            sellamount = min(cur_position+position_limit, amount) ## sellamount is a postive number
-                            cur_position -= sellamount ## after sell need to subtract it
-                            logger.print("SELL", str(sellamount) + "x", bid)
-                            orders.append(Order(product, bid, -sellamount))
-                    Sumprice += bid*(amount)
-                    Sumpricesquare += (bid**2)*amount
-                    totalnum += amount        
-            if cur_position>0:
-                orders.append(Order(product, round(acceptablesell_price), -(cur_position))) ##sell all 10002
-            else: ##cur_position <0
-                orders.append(Order(product, round(acceptablebuy_price),  -cur_position)) ##buy all 9998
+            #Sell_Order, Buy_Order = [], []
+            if state.timestamp%timeskip ==0:
+                if len(order_depth.sell_orders) != 0:    
+                    Sell_Order = sorted(list(order_depth.sell_orders.items()), key=lambda x: x[0]  )
+                
+                    for ask, amount in Sell_Order: ##amount is negative we want to buy
+                        if ask <= acceptablebuy_price: ##buy
+                        #    print('kk')
+                            if cur_position < position_limit:
+                                buyamount = min(position_limit-cur_position,-amount)
+                                cur_position += buyamount
+                                logger.print("BUY", str(buyamount) + "x", ask)
+                                orders.append(Order(product, ask, buyamount)) 
+                        Sumprice += ask*(-amount)
+                        Sumpricesquare += (ask**2)*(-amount)
+                        totalnum += -amount
+                        
+                if len(order_depth.buy_orders) != 0: ##someone in market want to buy, we want to sell them      
+                    Buy_Order = sorted(list(order_depth.buy_orders.items()), key=lambda x: -x[0]  )
+        
+                    for bid, amount in Buy_Order: ##amount is postive number, we want to sell
+                        if bid >= acceptablesell_price: ##sell
+                            if cur_position >-position_limit: 
+                                sellamount = min(cur_position+position_limit, amount) ## sellamount is a postive number
+                                cur_position -= sellamount ## after sell need to subtract it
+                                logger.print("SELL", str(sellamount) + "x", bid)
+                                orders.append(Order(product, bid, -sellamount))
+                        Sumprice += bid*(amount)
+                        Sumpricesquare += (bid**2)*amount
+                        totalnum += amount    
 
 
+
+
+#                if position_limit >0:
+ #                   orders.append(Order(product, round(acceptablesell_price),-cur_position  )) ##sell all 10002
+  #              else:
+   #                 orders.append(Order(product, round(acceptablebuy_price),  -cur_position)) ##buy all 9998
+
+            Sell_Order = sorted(list(order_depth.sell_orders.items()), key=lambda x: x[0]  )
+            Buy_Order = sorted(list(order_depth.buy_orders.items()), key=lambda x: -x[0]  )
+                   
             average = Sumprice/totalnum
             averagesquare = Sumpricesquare/totalnum
-          
+            Mid_price, Mid_spread = self.midprice_spread(Buy_Order, Sell_Order, True )
             
+           # if average!= 0:
+            #    self.product_infor[product]['mean'].append(average)
+             #   self.product_infor[product]['std'].append((averagesquare-average**2)**0.5)
+            if Mid_price != 'No_Mid':
+                self.product_infor[product]['mid'].append(Mid_price)
+                self.product_infor[product]['spread'].append(Mid_spread)
+            
+            #if len(self.product_infor[product]['mean'])==self.maxlookback+1:
+             #   self.product_infor[product]['mean'].pop(0)
+              #  self.product_infor[product]['std'].pop(0)
+            if len(self.product_infor[product]['mid'])==self.maxlookback+1:
+                self.product_infor[product]['mid'].pop(0)
+                self.product_infor[product]['spread'].pop(0)
             
 
             result[product] = orders
         #print(state.position)
         traderData = jsonpickle.encode(self.product_infor)  
 
-        conversions = 1
+        conversions = 0
         logger.flush(state, result, conversions, traderData)
         return result, conversions, traderData
 
