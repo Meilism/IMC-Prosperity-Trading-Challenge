@@ -3,6 +3,13 @@ from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder
 from typing import Any, List, Dict
 from collections import OrderedDict
 
+PRODUCTS = [
+    "AMETHYSTS",
+    "STARFRUIT",    
+    "ORCHIDS",
+    "BASKET",
+]
+
 TRADER_DATA = {
     'AMETHYSTS': {
         'POSITION_LIMIT': 20,
@@ -34,6 +41,30 @@ TRADER_DATA = {
         'MAKE_SPREAD_BA': [(1, 1)], # (bid, ask) offset from mid
         'MAKE_MIN_RANGE': [1, 1],
     },
+    'BASKET': {
+        'PRODUCT': ['CHOCOLATE', 'STRAWBERRIES', 'ROSES', 'GIFT_BASKET'],
+        'STD': 76.4, 
+        'MEAN': 379.5,
+        'POSITION_LIMIT': {
+            'CHOCOLATE': 250,
+            'STRAWBERRIES': 350,
+            'ROSES': 60,
+            'GIFT_BASKET': 60,
+        },
+        'NUM_BID': {
+            'CHOCOLATE': 0,
+            'STRAWBERRIES': 0,
+            'ROSES': 0,
+            'GIFT_BASKET': 0,
+        },
+        'NUM_ASK': {
+            'CHOCOLATE': 0,
+            'STRAWBERRIES': 0,
+            'ROSES': 0,
+            'GIFT_BASKET': 0,
+        },
+    },
+
 }
 class Logger:
     def __init__(self) -> None:
@@ -128,16 +159,34 @@ class Trader:
                 else:
                     return spread[i][::-1]
                 
+    def get_best_bid_ask(self, state: TradingState, product: Symbol) -> tuple[int, int]:
+        best_bid = list(state.order_depths[product].buy_orders.items())[0][0]
+        best_ask = list(state.order_depths[product].sell_orders.items())[0][0]
 
-    def update_trader_data(self, state: TradingState, trader_data: Dict[Symbol, Dict[str, Any]]) -> None:
-        for product in trader_data:
-            prod_data = trader_data[product]
-            prod_data['NUM_BID'] = prod_data['NUM_ASK'] = 0
+        return best_bid, best_ask
 
-            if prod_data['METHOD'] == 'static':
-                continue
 
-            
+    def update_price_obervations(self, state: TradingState, product: Symbol, data: Dict[str, Any]) -> None:
+        
+        # Update mid_price_data
+        if 'MID_PRICE' in data:
+            best_bid, best_ask = self.get_best_bid_ask(state, product)
+            mid_price = (best_ask + best_bid) / 2
+
+            data['MID_PRICE'].append(mid_price)
+            if len(data['MID_PRICE']) > data['price_data_size']:
+                data['MID_PRICE'].pop(0)
+
+
+    def update_trader_data(self, state: TradingState, product: Symbol, data: Dict[str, Any]) -> None:
+        data['NUM_BID'] = data['NUM_BID'] = 0
+        
+        if data['PRICING_METHOD'] == 'static':
+            return
+
+        self.update_price_obervations(state, product, data)
+
+
 
 
     def take_orders(self, product: Symbol, state: TradingState, prod_data: Dict[str, Any]):
@@ -210,6 +259,80 @@ class Trader:
 
         return orders
     
+    # ###############################
+    def take_orders_basket(self, state: TradingState, prod_data: Dict[str, Any]):
+        products = prod_data['PRODUCT']
+        orders = {p : [] for p in products}
+
+        # Below variables are from the current state only
+        other_bid_orders, other_ask_orders = {}, {}
+        hi_other_bid, lo_other_ask = {}, {}
+        lo_other_bid, hi_other_ask = {}, {}
+        mid_price, qty_other_bid, qty_other_ask = {}, {}, {}
+
+        for product in products:
+            other_bid_orders[product] = OrderedDict(sorted(
+                    state.order_depths[product].buy_orders.items(), reverse=True))
+            other_ask_orders[product] = OrderedDict(sorted(
+                    state.order_depths[product].sell_orders.items()))
+            
+            cur_position = state.position.get(product, 0)
+
+            # best bids from others 
+            hi_other_bid[product] = next(iter(other_bid_orders[product].values()))
+            lo_other_ask[product] = next(iter(other_ask_orders[product].values()))
+
+            lo_other_bid[product] = next(reversed(other_bid_orders[product].values()))
+            hi_other_ask[product] = next(reversed(other_ask_orders[product].values()))
+
+            mid_price[product] = (hi_other_bid[product] + lo_other_ask[product]) / 2
+            
+            # Collect the total quantity of other orders until the position limit/10
+            qty_other_bid[product], qty_other_ask[product] = 0, 0
+            for other_bid, qty in other_bid_orders[product].items():
+                qty_other_bid[product] += qty 
+                if qty_other_bid[product] >= prod_data['POSITION_LIMIT'][product] / 10:
+                    break
+            for other_ask, qty in other_ask_orders[product].items():
+                qty_other_ask[product] += -qty 
+                if qty_other_bid[product] >= prod_data['POSITION_LIMIT'][product] / 10:
+                    break
+
+        # Observed residual price, positive: favorable to sell the basket
+        diff_price = (mid_price['GIFT_BASKET'] 
+                   - mid_price['CHOCOLATE'] * 4 
+                   - mid_price['ROSES'] * 1 
+                   - mid_price['STRAWBERRIES'] * 6 
+                   - prod_data['MEAN'])
+
+        trade_at = prod_data['STD'] * 0.5
+
+
+        # good to sell
+        if diff_price > trade_at:
+            # how much we can sell maximally
+            ask_quantity = prod_data['POSITION_LIMIT']['GIFT_BASKET'] + cur_position
+            assert ask_quantity >= 0
+            if ask_quantity > 0:
+                # sell it to the worst bid from others' perspective, best bid for us
+                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', 
+                                                   lo_other_bid['GIFT_BASKET'], -ask_quantity)) 
+                prod_data['NUM_ASK']['GIFT_BASKET'] += ask_quantity
+                
+
+        elif diff_price < -trade_at:
+            bid_quantity = prod_data['POSITION_LIMIT']['GIFT_BASKET'] - cur_position
+            assert bid_quantity >= 0
+            if bid_quantity > 0:
+                orders['GIFT_BASKET'].append(Order('GIFT_BASKET', 
+                                                    hi_other_ask['GIFT_BASKET'], bid_quantity))
+                prod_data['NUM_BID']['GIFT_BASKET'] += bid_quantity
+
+        return orders
+
+
+    # ###############################
+
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]:
         result = {}
@@ -221,16 +344,22 @@ class Trader:
         else:
             trader_data = jsonpickle.decode(state.traderData)
 
-        self.update_trader_data(state, trader_data)
+        # self.update_trader_data(state, trader_data)
 
-        for product in state.listings:
+        for product in PRODUCTS:
+            # self.update_trader_data(state, product, trader_data[product])
+
             orders = []
 
-            if product == 'AMETHYSTS':
-                orders += self.take_orders(product, state, trader_data[product])
-                orders += self.make_orders(product, state, trader_data[product])
+            # if product == 'AMETHYSTS':
+                # orders += self.take_orders(product, state, trader_data[product])
+                # orders += self.make_orders(product, state, trader_data[product])
+            if product == 'BASKET':
+                orders_by_p = self.take_orders_basket(state, trader_data[product])
+                for p in orders_by_p:
+                    result[p] = orders_by_p[p]
 
-            result[product] = orders
+            # result[product] = orders
 
         # Format the output
         trader_data = jsonpickle.encode(trader_data)
