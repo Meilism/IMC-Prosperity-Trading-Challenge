@@ -479,6 +479,9 @@ class Trader:
 
         for product in PRODUCTS:
 
+            if product not in state.listings:
+                continue
+
             # Update data with new information from market
             self.updateData(product, state, trader_data[product])
 
