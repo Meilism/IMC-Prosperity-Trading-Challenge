@@ -1,7 +1,7 @@
 import pandas as pd
 import re
 
-def load_log(log_file):
+def load_log(log_file, day=3):
     timestamp_pattern = r"\"timestamp\": \d+"
     observation_pattern = r'\[\d+.?\d,\d+.?\d+,\d+?.\d+,\d+.?\d,-\d+.?\d+,\d+.?\d+,\d+.?\d+]'
     observation = pd.DataFrame(columns=['timestamp', 'ASK', 'BID', 'TRANSPORT_FEES', 'EXPORT_TARIFF', 'IMPORT_TARIFF', 'SUNLIGHT', 'HUMIDITY'])
@@ -42,6 +42,12 @@ def load_log(log_file):
 
     activity_log = pd.read_csv(log_file, skiprows=activity_start, nrows=activity_end-activity_start-1, sep=';').set_index(['product','day','timestamp'])
     trade_history = pd.read_json(trade_history)
+    if trade_history['timestamp'].max() > 1000_000:
+        trade_history['day'] = day + trade_history['timestamp'] // 1000_000
+        trade_history['timestamp'] = trade_history['timestamp'] % 1000_000
+    else:
+        trade_history['day'] = day
+    trade_history.set_index(['symbol', 'day', 'timestamp'], inplace=True)
     observation['ORCHIDS'] = (observation['ASK'] + observation['BID'])/2
 
     return activity_log, trade_history, observation
