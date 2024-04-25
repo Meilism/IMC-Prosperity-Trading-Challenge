@@ -4,14 +4,6 @@ from typing import Any, List, Dict
 import numpy as np
 import pandas as pd
 
-PRODUCTS = [
-    "AMETHYSTS",
-    "STARFRUIT",
-    "ORCHIDS",
-    "GIFT_BASKET",
-    'COCONUT_COUPON',
-]
-
 # Parameters and data that can be initialized at the beginning of each iteration
 PARAMS = {
     'COCONUT_COUPON': {
@@ -23,7 +15,9 @@ PARAMS = {
         'price_data_size': 1,
         'strategy': ['pair_trading', 'threshold'],
         'HEDGE_PRODUCT': {'COCONUT': None},
-        'PROD_POS_LIMIT': {'COCONUT': 300},
+        'PROD_POS_LIMIT': {'COCONUT': 300},        
+        'sell_limit': 60,
+        'buy_limit': 60,
         'trade_offset': 8,
         
         'num_buy': 0,
@@ -33,14 +27,14 @@ PARAMS = {
 
     'GIFT_BASKET':{        
         'POS_LIMIT': 60,
-        'sell_limit': 6,
-        'buy_limit': 6,
         'price_method': 'basket',
         'price_data_size': 1,
         'basket_offset': 379.5,
         'strategy': ['pair_trading', 'threshold'],
         'HEDGE_PRODUCT': {'CHOCOLATE': 4, 'STRAWBERRIES': 6, 'ROSES': 1},
         'PROD_POS_LIMIT': {'CHOCOLATE': 250, 'STRAWBERRIES': 350, 'ROSES': 60},
+        'sell_limit': 6,
+        'buy_limit': 6,
         'trade_offset': 40,
 
         'num_buy': 0,
@@ -113,6 +107,7 @@ TRADER_DATA = {
 
     'GIFT_BASKET':{
         'mid_price_data': [],
+        'previous_position': [],
     },
 
     'ORCHIDS': {
@@ -344,6 +339,7 @@ class Trader:
 
     def computeTakeOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
         params = PARAMS[product]
+
         if params['expected_mid_price'] is None:
             return []
 
@@ -508,16 +504,16 @@ class Trader:
 
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]: 
-        
+
         # Initialize returned variables
-        result = {p: [] for p in PRODUCTS}
+        result = {p: [] for p in PARAMS}
         conversions = 0
         
         # Initialize traderData in the first iteration
         trader_data = TRADER_DATA if state.traderData == "" else jsonpickle.decode(state.traderData)
 
-        for product in PRODUCTS:
-            if product not in state.listings: continue
+        for product in PARAMS:
+            if (product not in state.listings): continue
 
             # Update data with new information from market
             self.updateData(product, state, trader_data[product])
