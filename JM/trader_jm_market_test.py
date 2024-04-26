@@ -3,15 +3,16 @@ from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder
 from typing import Any, List, Dict
 import numpy as np
 import pandas as pd
+from math import ceil, floor
 
 PRODUCTS = [
     # "AMETHYSTS",
     # "STARFRUIT",
     # "ORCHIDS",
     "GIFT_BASKET",
-    "STRAWBERRIES",
-    "CHOCOLATE",
-    "ROSES",
+    # "STRAWBERRIES",
+    # "CHOCOLATE",
+    # "ROSES",
     # 'COCONUT_COUPON',
     # 'COCONUT',
 ]
@@ -36,7 +37,7 @@ PARAMS = {
     },
 
     'GIFT_BASKET':{        
-        'POS_LIMIT': 10,
+        'POS_LIMIT': 60,
         'sell_limit': 6,
         'buy_limit': 6,
         # 'price_method': 'basket',
@@ -104,7 +105,7 @@ PARAMS = {
         'price_method': 'foreign',
         'price_data_size': 1,
         'strategy': ['cross_market_make'],
-        'make_price_offset': [1, -2],
+        'make_price_offset': [-1000, -1],
 
         'num_buy': 0,
         'num_sell': 0,
@@ -435,6 +436,8 @@ class Trader:
                 orders.append(Order(product, bid, -sell_amount))
                 params['num_sell'] += sell_amount
 
+        
+
         return orders
     
 
@@ -453,8 +456,8 @@ class Trader:
                                                       params['make_price_spread'])
         buy_offset2, sell_offset2 = params['make_price_offset']
 
-        our_bid = min(best_bid + buy_offset, round(params['expected_mid_price'] - buy_offset2))
-        our_ask = max(best_ask - sell_offset, round(params['expected_mid_price'] + sell_offset2))
+        our_bid = min(best_bid + buy_offset, floor(params['expected_mid_price'] - buy_offset2))
+        our_ask = max(best_ask - sell_offset, ceil(params['expected_mid_price'] + sell_offset2))
         buy_amount = POS_LIMIT - position - params['num_buy']
         sell_amount = POS_LIMIT + position - params['num_sell']
         
