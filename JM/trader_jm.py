@@ -3,14 +3,8 @@ from datamodel import Listing, Observation, Order, OrderDepth, ProsperityEncoder
 from typing import Any, List, Dict
 import numpy as np
 import pandas as pd
-
-PRODUCTS = [
-    "AMETHYSTS",
-    "STARFRUIT",
-    "ORCHIDS",
-    "GIFT_BASKET",
-    'COCONUT_COUPON',
-]
+from math import ceil, floor
+import statistics as stats
 
 # Parameters and data that can be initialized at the beginning of each iteration
 PARAMS = {
@@ -23,7 +17,9 @@ PARAMS = {
         'price_data_size': 1,
         'strategy': ['pair_trading', 'threshold'],
         'HEDGE_PRODUCT': {'COCONUT': None},
-        'PROD_POS_LIMIT': {'COCONUT': 300},
+        'PROD_POS_LIMIT': {'COCONUT': 300},        
+        'sell_limit': 60,
+        'buy_limit': 60,
         'trade_offset': 8,
         
         'num_buy': 0,
@@ -31,16 +27,16 @@ PARAMS = {
         'expected_mid_price': None,
     },
 
-    'GIFT_BASKET':{        
+    'GIFT_BASKET':{
         'POS_LIMIT': 60,
-        'sell_limit': 6,
-        'buy_limit': 6,
         'price_method': 'basket',
         'price_data_size': 1,
         'basket_offset': 379.5,
         'strategy': ['pair_trading', 'threshold'],
         'HEDGE_PRODUCT': {'CHOCOLATE': 4, 'STRAWBERRIES': 6, 'ROSES': 1},
         'PROD_POS_LIMIT': {'CHOCOLATE': 250, 'STRAWBERRIES': 350, 'ROSES': 60},
+        'sell_limit': 6,
+        'buy_limit': 6,
         'trade_offset': 40,
 
         'num_buy': 0,
@@ -67,7 +63,7 @@ PARAMS = {
         'take_position_stage': [0, 20],
         'take_price_spread': [(2, 2), (2, 0)],
         'make_position_stage': [0, 15, 20],
-        'make_price_spread': [(1, 1), (1, 2), (0, 2)],
+        'make_price_undercut': [(1, 1), (1, 2), (0, 2)],
         'make_price_offset': [1, 1],
 
         'num_buy': 0,
@@ -96,7 +92,7 @@ PARAMS = {
         'take_position_stage': [0, 20],
         'take_price_spread': [(1, 1), (1, 0)],
         'make_position_stage': [20],
-        'make_price_spread': [(1, 1)],
+        'make_price_undercut': [(1, 1)],
         'make_price_offset': [1, 1],
 
         'num_buy': 0,
@@ -216,11 +212,11 @@ logger = Logger()
 
 class Trader:
     
-    def getBlackScholes(self, S: float, K: float=10_000, T: float=246, sigma: float=0.01009) -> float:
+    def getBlackScholes(self, S: float, K: float=10_000, T: float=247, sigma: float=0.01009) -> float:
         d1 = (np.log(S/10_000) + 0.5 * sigma**2 * T) / (sigma * np.sqrt(T))
         d2 = d1 - sigma * np.sqrt(T)
-        norm_cdf_d1 = 1/2 + d1/(np.sqrt(2 * np.pi))
-        norm_cdf_d2 = 1/2 + d2/(np.sqrt(2 * np.pi))
+        norm_cdf_d1 = stats.NormalDist().cdf(d1)
+        norm_cdf_d2 = stats.NormalDist().cdf(d2)
         return float(S * norm_cdf_d1 - 10_000 * norm_cdf_d2), float(norm_cdf_d1), float(10_000 * norm_cdf_d2)
     
 
@@ -344,6 +340,7 @@ class Trader:
 
     def computeTakeOrders(self, product: Symbol, state: TradingState, data: Dict[str, Any]) -> list[Order]:
         params = PARAMS[product]
+
         if params['expected_mid_price'] is None:
             return []
 
@@ -385,11 +382,11 @@ class Trader:
 
         buy_offset, sell_offset = self.getPriceSpread(position + params['num_buy'] - params['num_sell'], 
                                                       params['make_position_stage'], 
-                                                      params['make_price_spread'])
+                                                      params['make_price_undercut'])
         buy_offset2, sell_offset2 = params['make_price_offset']
 
-        our_bid = min(best_bid + buy_offset, round(params['expected_mid_price'] - buy_offset2))
-        our_ask = max(best_ask - sell_offset, round(params['expected_mid_price'] + sell_offset2))
+        our_bid = min(best_bid + buy_offset, floor(params['expected_mid_price'] - buy_offset2))
+        our_ask = max(best_ask - sell_offset, ceil(params['expected_mid_price'] + sell_offset2))
         buy_amount = POS_LIMIT - position - params['num_buy']
         sell_amount = POS_LIMIT + position - params['num_sell']
         
@@ -508,21 +505,19 @@ class Trader:
 
 
     def run(self, state: TradingState) -> tuple[dict[Symbol, list[Order]], int, str]: 
-        
+
         # Initialize returned variables
-        result = {p: [] for p in PRODUCTS}
+        result = {p: [] for p in PARAMS}
         conversions = 0
         
         # Initialize traderData in the first iteration
         trader_data = TRADER_DATA if state.traderData == "" else jsonpickle.decode(state.traderData)
 
-        for product in PRODUCTS:
-            if product not in state.listings: continue
+        for product in PARAMS:
+            if (product not in state.listings): continue
 
             # Update data with new information from market
             self.updateData(product, state, trader_data[product])
-
-            logger.print(f"Product: {product}, trader_data: {trader_data[product]}")
 
             for strategy in PARAMS[product]["strategy"]:
                 if strategy == "market_take":
